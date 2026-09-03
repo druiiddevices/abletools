@@ -47,6 +47,16 @@ The macro panel should collectively cover:
 
 ## Macro and variation rules
 
+- Milestone 3A blueprints use linear mappings only. Normalize a macro position as
+  `(x - macro.minimum) / (macro.maximum - macro.minimum)`; interpolate from target minimum to
+  maximum for direct mappings and from maximum to minimum for inverse mappings.
+- A target's declared neutral must be the value reached at the macro's neutral position. Integer
+  controls use documented nearest-integer quantization; continuous controls must agree within the
+  validator's numerical tolerance.
+- `macro_variations.INIT` is the authoritative initial state. Every mapped device setting must equal
+  the target value reconstructed from INIT.
+- Within one rack, each device-path and parameter pair belongs to exactly one macro. Combine related
+  concepts or select a different documented parameter instead of creating competing macro owners.
 - Make the neutral default immediately usable and level-conscious.
 - Give every macro one understandable performance concept rather than exposing engineering clutter.
 - Favor coordinated multi-parameter mappings that make complex processing playable from the top level.

@@ -45,6 +45,11 @@ CAPABILITIES: dict[str, Capability] = {
         "enabled",
         "Generate the standards-compliant HAZY MIDI Essentials pack.",
     ),
+    "ableton_rack_blueprint": Capability(
+        "ableton_rack_blueprint",
+        "enabled",
+        "Generate and validate deterministic JSON build specifications for Ableton racks.",
+    ),
     "serum2_preset": Capability(
         "serum2_preset",
         "gated",

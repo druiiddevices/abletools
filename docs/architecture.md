@@ -58,8 +58,26 @@ but HAZY's musical algorithms and seed namespaces are independent from DRUIID.
 ## Runtime capability registry
 
 Every generator or exporter enters through `abletools.capabilities`. Standard MIDI, PCM WAV,
-deterministic ZIP packs, DRUIID MIDI Essentials, and HAZY MIDI Essentials are enabled. Native Serum 2,
+deterministic ZIP packs, DRUIID MIDI Essentials, HAZY MIDI Essentials, and JSON rack blueprints are enabled. Native Serum 2,
 Ableton rack, Ableton groove, and Max for Live serialization remain explicitly gated.
+
+## Milestone 3A rack blueprint foundation
+
+Rack blueprints are deterministic JSON construction specifications, not native Ableton files. The layer consists of:
+
+- a strict JSON Schema plus dependency-free semantic validation
+- a closed registry of documented Ableton Live 12 stock devices and parameter domains
+- rack-type-aware topology checks for audio effects, Operator instruments, and MIDI effects
+- exact macro counts, resolved mapping targets, safe ranges, neutral states, and complete variations
+- one evaluable linear mapping model, exclusive target ownership, and INIT-authoritative device settings
+- deterministic DRUIID and HAZY catalogs, manifests, README files, checksums, and ZIPs
+
+Each style pack contains `AGE_MACHINE`, `RHYTHM_FRACTURE`, `OPERATOR_SUB_FORM`,
+`OPERATOR_MEMORY_PAD`, and `MIDI_PATTERN_MUTATOR`. Paired styles use different topology, internal
+settings, and mappings. `ableton_rack_blueprint` is enabled independently; `ableton_rack` remains gated.
+
+Validation proves the build specification's structure and internal consistency. Ableton-open, listening,
+macro-recall, and save/reopen checks are explicitly recorded as not performed while native export is gated.
 
 ## Asset catalog
 

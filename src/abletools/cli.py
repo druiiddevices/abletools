@@ -11,6 +11,9 @@ from .manifest import load_manifest
 from .midi import validate_midi
 from .pack import build_demo_pack, build_druiid_midi_pack, build_hazy_midi_pack, validate_pack, validate_zip
 from .recipe import HAZY_ARCHETYPES, HAZY_MODES, ROOTS, SCALES, HazyMidiRecipe, MidiEssentialsRecipe
+from .rack_blueprint import RackBlueprintRecipe
+from .rack_pack import build_rack_blueprint_pack
+from .rack_validation import validate_rack_blueprint_file
 
 
 def _validate(path: Path) -> dict[str, object]:
@@ -23,6 +26,8 @@ def _validate(path: Path) -> dict[str, object]:
         return {"type": "midi", "result": validate_midi(path)}
     if path.suffix.lower() == ".wav":
         return {"type": "wav", "result": validate_wav(path)}
+    if path.suffix.lower() == ".json":
+        return {"type": "rack_blueprint", "result": validate_rack_blueprint_file(path)}
     if path.suffix.lower() == ".zip":
         return {"type": "zip", "result": validate_zip(path)}
     raise ValueError(f"unsupported path: {path}")
@@ -67,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
     hazy.add_argument("--motif-mutation", type=float, default=0.5)
     hazy.add_argument("--arpeggio-mutation", type=float, default=0.55)
     hazy.add_argument("--drum-mutation", type=float, default=0.5)
+    racks = subparsers.add_parser(
+        "rack-blueprints", help="build deterministic Ableton rack blueprint specifications"
+    )
+    racks.add_argument("--output", type=Path, required=True)
+    racks.add_argument("--style", choices=("DRUIID", "HAZY"), required=True)
+    racks.add_argument("--seed", type=int, default=1842)
     validate = subparsers.add_parser("validate", help="validate an R1 file or pack")
     validate.add_argument("path", type=Path)
     return parser
@@ -117,6 +128,12 @@ def main() -> int:
             drum_mutation=args.drum_mutation,
         )
         output = build_hazy_midi_pack(args.output, recipe)
+        print(json.dumps({"status": "ok", "pack": str(output), "archive": str(output.with_suffix('.zip'))}))
+        return 0
+    if args.command == "rack-blueprints":
+        output = build_rack_blueprint_pack(
+            args.output, RackBlueprintRecipe(seed=args.seed, style=args.style)
+        )
         print(json.dumps({"status": "ok", "pack": str(output), "archive": str(output.with_suffix('.zip'))}))
         return 0
     result = _validate(args.path)

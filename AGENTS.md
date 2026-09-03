@@ -26,6 +26,8 @@ Before designing, generating, reviewing, or approving an asset, read:
    - both style files only for an explicitly requested hybrid
 3. For Audio Effect Racks, Instrument Racks, Operator instruments, or sound-design tools, also read
    `docs/knowledge/KNOWLEDGE_ABLETON_RACKS_R1.md`.
+4. For MIDI Effect Racks or MIDI-processing blueprints, also read
+   `docs/knowledge/KNOWLEDGE_ABLETON_MIDI_PROCESSING_R1.md`.
 
 The knowledge files define asset/style intent. This `AGENTS.md` defines repository execution rules. Do not silently invent new Druiid traits or change a style profile from a single output; keep observations separate until the user approves them. Rack blueprints and native `.adg` export are separate capabilities: blueprint work may proceed before native export, but a blueprint must never be presented as a finished rack.
 
@@ -37,6 +39,10 @@ Run before committing:
 python -m unittest discover -s tests
 python -m abletools.cli demo --output build/smoke --seed 1842
 python -m abletools.cli validate build/smoke
+python -m abletools.cli rack-blueprints --output build/racks-druiid --style DRUIID --seed 1842
+python -m abletools.cli validate build/racks-druiid
+python -m abletools.cli rack-blueprints --output build/racks-hazy --style HAZY --seed 1842
+python -m abletools.cli validate build/racks-hazy
 ```
 
 ## Change discipline

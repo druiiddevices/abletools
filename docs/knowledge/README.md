@@ -9,5 +9,6 @@ These files are the canonical asset and style references shared by the Abletools
 | `HAZY` | Asset standards + `KNOWLEDGE_BOC_STYLE_R1.md` |
 | Explicit hybrid | Asset standards + both style profiles |
 | Audio Effect Rack, Instrument Rack, Operator instrument, or sound-design tool | Asset standards + requested style profile + `KNOWLEDGE_ABLETON_RACKS_R1.md` |
+| MIDI Effect Rack or MIDI-processing blueprint | Asset standards + requested style profile + `KNOWLEDGE_ABLETON_RACKS_R1.md` + `KNOWLEDGE_ABLETON_MIDI_PROCESSING_R1.md` |
 
 Behavioral instructions belong in the GPT configuration or `AGENTS.md`, not in these reference files. Keep the copies uploaded to the GPT synchronized with this directory.

@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://druiiddevices.github.io/abletools/schemas/rack-blueprint.schema.json",
+  "title": "Abletools Ableton Rack Blueprint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "blueprint_notice", "capability", "native_format",
+    "mapping_model_version", "initial_state_authority",
+    "rack_name", "family", "rack_type", "style", "version",
+    "minimum_live_version", "seed", "dependencies", "intended_sources",
+    "topology", "input_assumptions", "dry_strategy", "gain_staging",
+    "behavior_notes", "macros", "macro_variations",
+    "randomization_exclusions", "validation_declarations"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "blueprint_notice": {"const": "VALIDATED BUILD SPECIFICATION — NOT AN ABLETON .ADG/.ADV/.AGR/.AMXD FILE"},
+    "capability": {"const": "ableton_rack_blueprint"},
+    "native_format": {"const": false},
+    "mapping_model_version": {"const": "linear-v1"},
+    "initial_state_authority": {"const": "macro_variations.INIT"},
+    "rack_name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+    "family": {"enum": ["AGE_MACHINE", "RHYTHM_FRACTURE", "OPERATOR_SUB_FORM", "OPERATOR_MEMORY_PAD", "MIDI_PATTERN_MUTATOR"]},
+    "rack_type": {"enum": ["audio_effect_rack", "operator_instrument_rack", "midi_effect_rack"]},
+    "style": {"enum": ["DRUIID", "HAZY"]},
+    "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+    "minimum_live_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+    "seed": {"type": "integer", "minimum": 0},
+    "dependencies": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "intended_sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "topology": {
+      "type": "object", "additionalProperties": false, "required": ["chains"],
+      "properties": {"chains": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/chain"}}}
+    },
+    "input_assumptions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["signal_type", "description", "incoming_note_behavior", "outgoing_note_behavior"],
+      "properties": {
+        "signal_type": {"enum": ["audio", "midi"]},
+        "description": {"type": "string", "minLength": 1},
+        "incoming_note_behavior": {"type": "string", "minLength": 1},
+        "outgoing_note_behavior": {"type": "string", "minLength": 1}
+      }
+    },
+    "dry_strategy": {
+      "type": "object", "additionalProperties": false, "required": ["mode", "details"],
+      "properties": {"mode": {"enum": ["serial_mix", "parallel_dry_chain", "not_applicable"]}, "details": {"type": "string", "minLength": 1}}
+    },
+    "gain_staging": {
+      "type": "object", "additionalProperties": false,
+      "required": ["input_headroom_db", "output_ceiling_db", "output_trim_macro", "details"],
+      "properties": {
+        "input_headroom_db": {"type": ["number", "null"]},
+        "output_ceiling_db": {"type": ["number", "null"]},
+        "output_trim_macro": {"type": ["string", "null"]},
+        "details": {"type": "string", "minLength": 1}
+      }
+    },
+    "behavior_notes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["latency", "tail", "mono", "stereo", "low_frequency", "bypass"],
+      "properties": {
+        "latency": {"type": "string", "minLength": 1}, "tail": {"type": "string", "minLength": 1},
+        "mono": {"type": "string", "minLength": 1}, "stereo": {"type": "string", "minLength": 1},
+        "low_frequency": {"type": "string", "minLength": 1}, "bypass": {"type": "string", "minLength": 1}
+      }
+    },
+    "macros": {"type": "array", "minItems": 12, "maxItems": 16, "items": {"$ref": "#/$defs/macro"}},
+    "macro_variations": {
+      "type": "object", "additionalProperties": false,
+      "required": ["INIT", "SUBTLE", "ACTIVE", "EXTREME_SAFE"],
+      "properties": {
+        "INIT": {"$ref": "#/$defs/variation"}, "SUBTLE": {"$ref": "#/$defs/variation"},
+        "ACTIVE": {"$ref": "#/$defs/variation"}, "EXTREME_SAFE": {"$ref": "#/$defs/variation"}
+      }
+    },
+    "randomization_exclusions": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "validation_declarations": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "registry", "structural", "ableton_open", "listening_test", "native_export_gate"],
+      "properties": {
+        "schema": {"const": "required"}, "registry": {"const": "required"}, "structural": {"const": "required"},
+        "ableton_open": {"const": "not_performed_native_export_gated"},
+        "listening_test": {"const": "not_performed_native_export_gated"},
+        "native_export_gate": {"const": "closed"}
+      }
+    }
+  },
+  "$defs": {
+    "chain": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "role", "level_db", "pan", "pass_through", "devices"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}, "name": {"type": "string", "minLength": 1},
+        "role": {"type": "string", "minLength": 1}, "level_db": {"type": "number", "minimum": -60, "maximum": 12},
+        "pan": {"type": "number", "minimum": -1, "maximum": 1}, "pass_through": {"type": "boolean"},
+        "devices": {"type": "array", "items": {"$ref": "#/$defs/device"}}
+      }
+    },
+    "device": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "registry_id", "name", "stage", "enabled", "path", "settings"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}, "registry_id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1}, "stage": {"enum": ["midi_effect", "instrument", "audio_effect"]},
+        "enabled": {"type": "boolean"}, "path": {"type": "string", "pattern": "^chains/[a-z][a-z0-9_]*/devices/[a-z][a-z0-9_]*$"},
+        "settings": {"type": "object", "minProperties": 1}
+      }
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["device_path", "parameter_id", "minimum", "maximum", "neutral", "direction", "purpose"],
+      "properties": {
+        "device_path": {"type": "string", "minLength": 1}, "parameter_id": {"type": "string", "minLength": 1},
+        "minimum": {"type": "number"}, "maximum": {"type": "number"}, "neutral": {"type": "number"},
+        "direction": {"enum": ["direct", "inverse"]}, "purpose": {"type": "string", "minLength": 1}
+      }
+    },
+    "macro": {
+      "type": "object", "additionalProperties": false,
+      "required": ["index", "name", "color", "info_text", "default", "minimum", "maximum", "neutral_value", "polarity", "curve", "exclude_from_randomization", "zero_behavior", "targets"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 1, "maximum": 16}, "name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "color": {"type": "string", "pattern": "^#[0-9A-F]{6}$"}, "info_text": {"type": "string", "minLength": 1},
+        "default": {"type": "number"}, "minimum": {"type": "number"}, "maximum": {"type": "number"},
+        "neutral_value": {"type": "number"}, "polarity": {"enum": ["unipolar", "bipolar"]},
+        "curve": {"const": "linear"}, "exclude_from_randomization": {"type": "boolean"},
+        "zero_behavior": {"type": "string", "minLength": 1},
+        "targets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/target"}}
+      }
+    },
+    "variation": {
+      "type": "object", "additionalProperties": {"type": "number"}, "minProperties": 12
+    }
+  }
+}

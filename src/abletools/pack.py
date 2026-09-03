@@ -17,6 +17,8 @@ from .hazy import GeneratedHazyMidiAsset, generate_hazy_midi_essentials
 from .manifest import load_manifest, validate_manifest_data, validate_relative_path, write_manifest
 from .midi import PPQ, validate_midi, write_chord_midi, write_midi_clip
 from .recipe import HAZY_MODES, HazyMidiRecipe, MidiEssentialsRecipe
+from .rack_blueprint import RACK_FAMILIES
+from .rack_validation import validate_rack_blueprint_file
 
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
@@ -662,6 +664,15 @@ def validate_pack(root: str | Path) -> dict[str, Any]:
         raise ValueError("pack requires a non-empty README.md")
     manifest = load_manifest(pack_root / "manifest.json", check_files=True)
     _validate_hazy_inventory(manifest)
+    if manifest.get("asset_type") == "ableton_rack_blueprints":
+        if len(manifest["files"]) != len(RACK_FAMILIES):
+            raise ValueError("rack blueprint pack requires exactly five files")
+        families = [item["metadata"].get("family") for item in manifest["files"]]
+        if tuple(families) != RACK_FAMILIES:
+            raise ValueError("rack blueprint pack must contain the canonical family inventory in order")
+        for item in manifest["files"]:
+            if not item["path"].startswith("RACKS/BLUEPRINTS/"):
+                raise ValueError("rack blueprints must be stored under RACKS/BLUEPRINTS")
     expected_files = {"README.md", "manifest.json", *(item["path"] for item in manifest["files"])}
     actual_files = {
         path.relative_to(pack_root).as_posix()
@@ -687,6 +698,39 @@ def validate_pack(root: str | Path) -> dict[str, Any]:
             result = validate_wav(path)
             if result["sample_rate"] != 48_000 or result["sample_width_bits"] != 24:
                 raise ValueError("R1 pack WAV files must be 48 kHz, 24-bit PCM")
+        elif suffix == ".json" and manifest.get("asset_type") == "ableton_rack_blueprints":
+            validator = "abletools.rack_blueprint"
+            if item["format"] != {
+                "container": "Abletools Rack Blueprint JSON",
+                "media_type": "application/json",
+                "schema_version": "1.0.0",
+            }:
+                raise ValueError(f"rack blueprint format metadata is invalid: {item['path']}")
+            result = validate_rack_blueprint_file(path)
+            metadata = item["metadata"]
+            for field in ("seed", "style"):
+                if metadata.get(field) != manifest.get(field):
+                    raise ValueError(f"rack blueprint metadata mismatch for {field}: {item['path']}")
+            if metadata.get("role") != "rack_blueprint" or item["role"] != "rack_blueprint":
+                raise ValueError(f"rack blueprint role metadata is invalid: {item['path']}")
+            if metadata.get("native_format") is not False:
+                raise ValueError(f"rack blueprint must declare native_format false: {item['path']}")
+            expected_metadata = {
+                "device_count": result["devices"],
+                "family": result["family"],
+                "initial_state_authority": result["initial_state_authority"],
+                "macro_count": result["macros"],
+                "mapping_model_version": result["mapping_model_version"],
+                "minimum_live_version": "12.0",
+                "native_format": False,
+                "rack_type": result["rack_type"],
+                "role": "rack_blueprint",
+                "seed": result["seed"],
+                "style": result["style"],
+                "target_count": result["targets"],
+            }
+            if metadata != expected_metadata:
+                raise ValueError(f"rack blueprint metadata disagrees with validated JSON: {item['path']}")
         else:
             raise ValueError(f"unsupported enabled asset type: {item['path']}")
         if recorded[item["path"]]["validator"] != validator:
