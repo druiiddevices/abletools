@@ -10,7 +10,7 @@ Start from the latest remote `main` and confirm these files exist locally:
 2. `docs/knowledge/KNOWLEDGE_ABLETON_ASSET_STANDARDS_R1.md`
 3. `docs/knowledge/KNOWLEDGE_DRUIID_STYLE_R1.md`
 4. `docs/knowledge/KNOWLEDGE_BOC_STYLE_R1.md`
-5. `docs/knowledge/KNOWLEDGE_ABLETON_FX_RACKS_R1.md`
+5. `docs/knowledge/KNOWLEDGE_ABLETON_RACKS_R1.md`
 
 If any are missing, stop and report the current branch and `git status --short --branch`. Do not reconstruct them from memory.
 
@@ -21,12 +21,14 @@ Keep rack design separate from native rack serialization:
 - A structured rack-blueprint contract, validator, and original sound-design catalog may be implemented before native export.
 - Native `.adg`/`.adv` serialization remains disabled until fixture-based round-trip tests in Ableton Live pass.
 - Never label a JSON or Markdown blueprint as a finished Ableton rack.
+- Every Audio Effect Rack and Instrument Rack must have 8–16 extensive, useful, premapped macros with documented multi-parameter targets, safe ranges, and Macro Variations.
+- Include a stock Operator Instrument Rack lane with fully specified synthesis, articulation, modulation, downstream effects, gain staging, and top-level mappings. Deeper Operator parameters may remain internal when exposing them would make the performance surface worse.
 
 The planned order is now:
 
 1. shared contract hardening plus DRUIID MIDI Essentials
 2. separate HAZY MIDI Essentials
-3. rack-blueprint contract and sound-design tool catalog
+3. rack-blueprint contract, Audio Effect Rack catalog, and Operator Instrument Rack catalog
 4. drums and general samples/loops
 5. native rack fixture/export work when an Ableton validation path is available, followed by the remaining independently gated formats
 
