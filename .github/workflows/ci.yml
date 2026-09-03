@@ -30,3 +30,8 @@ jobs:
           abletools druiid-midi --output build/druiid-midi --seed 1842 --root A --scale minor
           abletools validate build/druiid-midi
           abletools validate build/druiid-midi.zip
+      - name: Build and validate HAZY MIDI Essentials
+        run: |
+          abletools hazy-midi --output build/hazy-midi --seed 1842 --root D --mode dorian
+          abletools validate build/hazy-midi
+          abletools validate build/hazy-midi.zip

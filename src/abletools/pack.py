@@ -13,9 +13,10 @@ from . import __version__
 from .audio import validate_wav, write_kick_wav
 from .capabilities import require_capability
 from .druiid import GM_DRUM_MAPPING, GeneratedMidiAsset, generate_midi_essentials
+from .hazy import GeneratedHazyMidiAsset, generate_hazy_midi_essentials
 from .manifest import load_manifest, validate_manifest_data, validate_relative_path, write_manifest
 from .midi import PPQ, validate_midi, write_chord_midi, write_midi_clip
-from .recipe import MidiEssentialsRecipe
+from .recipe import HAZY_MODES, HazyMidiRecipe, MidiEssentialsRecipe
 
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
@@ -42,6 +43,18 @@ def _asset_filename(recipe: MidiEssentialsRecipe, asset: GeneratedMidiAsset) -> 
     relationship = {"A": "FOUNDATION", "B": "MUTATION_B", "C": "MUTATION_C"}[asset.variation]
     return (
         f"DRUIID_{asset.descriptor}_{relationship}_{recipe.bpm}_{_key_token(recipe)}_"
+        f"S{recipe.seed:04d}_V01.mid"
+    )
+
+
+def _hazy_key_token(recipe: HazyMidiRecipe) -> str:
+    return f"{recipe.root.replace('#', 's')}_{recipe.mode}"
+
+
+def _hazy_asset_filename(recipe: HazyMidiRecipe, asset: GeneratedHazyMidiAsset) -> str:
+    relationship = {"A": "FOUNDATION", "B": "RELATED_B", "C": "RELATED_C"}[asset.variation]
+    return (
+        f"HAZY_{asset.descriptor}_{relationship}_{recipe.bpm}_{_hazy_key_token(recipe)}_"
         f"S{recipe.seed:04d}_V01.mid"
     )
 
@@ -99,11 +112,13 @@ def _validate_midi_metadata_consistency(
             raise ValueError(f"MIDI metadata mismatch for {field}: {item['path']}")
 
     format_metadata = item["format"]
-    if manifest.get("style") == "DRUIID" and manifest.get("asset_type") == "midi_essentials":
+    if manifest.get("style") in {"DRUIID", "HAZY"} and manifest.get("asset_type") == "midi_essentials":
         if format_metadata.get("midi_format") != 0 or format_metadata.get("ppq") != PPQ:
-            raise ValueError("DRUIID MIDI Essentials requires MIDI format 0 at 480 PPQ")
+            raise ValueError(f"{manifest['style']} MIDI Essentials requires MIDI format 0 at 480 PPQ")
         if manifest["format"].get("midi_format") != 0 or manifest["format"].get("ppq") != PPQ:
-            raise ValueError("DRUIID MIDI Essentials top-level format must be format 0 at 480 PPQ")
+            raise ValueError(
+                f"{manifest['style']} MIDI Essentials top-level format must be format 0 at 480 PPQ"
+            )
     if result["format"] != format_metadata["midi_format"]:
         raise ValueError(f"MIDI format metadata disagrees with parsed result: {item['path']}")
     if result["ppq"] != format_metadata["ppq"]:
@@ -142,6 +157,181 @@ def _validate_midi_metadata_consistency(
         if not set(result["used_notes"]) <= set(drum_mapping.values()):
             raise ValueError(f"drum mapping metadata disagrees with parsed MIDI: {item['path']}")
 
+    if manifest.get("style") == "HAZY" and manifest.get("asset_type") == "midi_essentials":
+        _validate_hazy_midi_metadata(manifest, item, result)
+
+
+def _validate_hazy_midi_metadata(
+    manifest: dict[str, Any], item: dict[str, Any], result: dict[str, Any]
+) -> None:
+    """Check HAZY creative declarations against the actual notes and pack identity."""
+    metadata = item["metadata"]
+    required = {
+        "borrowed_tones",
+        "chord_symbols",
+        "degree_sequence",
+        "harmonic_archetype",
+        "mode",
+        "timing_model",
+        "variation",
+        "variation_relationship",
+        "voicing_or_color_behavior",
+    }
+    missing = sorted(required - metadata.keys())
+    if missing:
+        raise ValueError(f"HAZY MIDI metadata missing required fields: {', '.join(missing)}")
+    if metadata["mode"] != manifest["scale"]:
+        raise ValueError(f"HAZY mode metadata disagrees with pack scale: {item['path']}")
+    recipe = manifest.get("recipe", {})
+    if metadata["mode"] != recipe.get("mode"):
+        raise ValueError(f"HAZY mode metadata disagrees with the canonical recipe: {item['path']}")
+    if metadata["harmonic_archetype"] != recipe.get("harmonic_archetype"):
+        raise ValueError(f"HAZY harmonic archetype disagrees with the canonical recipe: {item['path']}")
+    degree_sequence = metadata["degree_sequence"]
+    chord_symbols = metadata["chord_symbols"]
+    if (
+        not isinstance(degree_sequence, list)
+        or not degree_sequence
+        or any(
+            isinstance(degree, bool) or not isinstance(degree, int) or not 1 <= degree <= 7
+            for degree in degree_sequence
+        )
+        or degree_sequence != recipe.get("progression")
+    ):
+        raise ValueError(f"HAZY degree sequence disagrees with the canonical recipe: {item['path']}")
+    if (
+        not isinstance(chord_symbols, list)
+        or len(chord_symbols) != len(degree_sequence)
+        or any(not isinstance(symbol, str) or not symbol.strip() for symbol in chord_symbols)
+    ):
+        raise ValueError(f"HAZY chord-symbol metadata is incomplete: {item['path']}")
+    if metadata["variation"] not in {"A", "B", "C"}:
+        raise ValueError(f"HAZY variation must be A, B, or C: {item['path']}")
+    for field in ("timing_model", "variation_relationship", "voicing_or_color_behavior"):
+        if not metadata[field] or not isinstance(metadata[field], (str, dict)):
+            raise ValueError(f"HAZY MIDI metadata requires non-empty {field}: {item['path']}")
+
+    borrowed_tones = metadata["borrowed_tones"]
+    if not isinstance(borrowed_tones, list):
+        raise ValueError(f"HAZY borrowed_tones metadata must be a list: {item['path']}")
+    if item["role"] == "drum_pattern":
+        if borrowed_tones:
+            raise ValueError(f"HAZY drum clips cannot declare harmonic borrowed tones: {item['path']}")
+        return
+
+    try:
+        intervals = HAZY_MODES[manifest["scale"]]
+    except KeyError as error:
+        raise ValueError(f"unsupported HAZY mode in manifest: {manifest['scale']}") from error
+    note_names = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+    root_pc = note_names.index(manifest["root"])
+    allowed_pitch_classes = {(root_pc + interval) % 12 for interval in intervals}
+    actual_borrowed = {
+        pitch for pitch in result["used_notes"] if pitch % 12 not in allowed_pitch_classes
+    }
+    declared_borrowed: set[int] = set()
+    for declaration in borrowed_tones:
+        if not isinstance(declaration, dict):
+            raise ValueError(f"HAZY borrowed tone declarations must be objects: {item['path']}")
+        midi_note = declaration.get("midi_note")
+        pitch_class = declaration.get("pitch_class")
+        reason = declaration.get("reason")
+        if (
+            isinstance(midi_note, bool)
+            or not isinstance(midi_note, int)
+            or not 0 <= midi_note <= 127
+            or pitch_class != note_names[midi_note % 12]
+            or not isinstance(reason, str)
+            or not reason.strip()
+        ):
+            raise ValueError(f"malformed HAZY borrowed tone declaration: {item['path']}")
+        if midi_note in declared_borrowed:
+            raise ValueError(f"duplicate HAZY borrowed tone declaration: {item['path']}")
+        declared_borrowed.add(midi_note)
+    if declared_borrowed != actual_borrowed:
+        raise ValueError(f"HAZY borrowed notes must be declared exactly: {item['path']}")
+
+    if item["role"] == "chords":
+        voicings = metadata.get("voicings")
+        colors = metadata.get("color_behavior")
+        pedal = metadata.get("pedal")
+        voice_leading = metadata.get("voice_leading")
+        if (
+            not isinstance(voicings, list)
+            or len(voicings) != len(metadata["degree_sequence"])
+            or any(
+                not isinstance(voicing, list)
+                or len(voicing) < 2
+                or any(
+                    isinstance(note, bool) or not isinstance(note, int) or not 0 <= note <= 127
+                    for note in voicing
+                )
+                for voicing in voicings
+            )
+        ):
+            raise ValueError(f"HAZY chord voicing metadata is incomplete: {item['path']}")
+        if (
+            not isinstance(colors, list)
+            or len(colors) != len(voicings)
+            or any(not isinstance(color, str) or not color for color in colors)
+        ):
+            raise ValueError(f"HAZY chord color metadata is incomplete: {item['path']}")
+        if not isinstance(pedal, dict) or not isinstance(voice_leading, dict):
+            raise ValueError(f"HAZY chord pedal and voice-leading metadata are required: {item['path']}")
+        declared_harmonic_notes = {pitch for voicing in voicings for pitch in voicing}
+        if declared_harmonic_notes | declared_borrowed != set(result["used_notes"]):
+            raise ValueError(f"HAZY chord voicings disagree with parsed MIDI notes: {item['path']}")
+        transition_movements: list[int] = []
+        exact_common: list[int] = []
+        pitch_class_common: list[int] = []
+        for previous, current in zip(voicings, voicings[1:]):
+            transition_movements.append(
+                sum(min(abs(note - prior) for prior in previous) for note in current)
+            )
+            exact_common.append(len(set(previous) & set(current)))
+            pitch_class_common.append(
+                len({note % 12 for note in previous} & {note % 12 for note in current})
+            )
+        expected_voice_leading = {
+            "exact_common_tone_counts": exact_common,
+            "max_transition_movement": max(transition_movements, default=0),
+            "pitch_class_common_tone_counts": pitch_class_common,
+            "total_transition_movement": sum(transition_movements),
+            "transition_movements": transition_movements,
+        }
+        if voice_leading != expected_voice_leading:
+            raise ValueError(f"HAZY voice-leading metadata is inaccurate: {item['path']}")
+        pedal_indices = pedal.get("chord_indices")
+        pedal_note = pedal.get("midi_note")
+        if not isinstance(pedal_indices, list) or any(
+            isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(voicings)
+            for index in pedal_indices
+        ):
+            raise ValueError(f"HAZY pedal metadata is malformed: {item['path']}")
+        if pedal_indices and any(pedal_note not in voicings[index] for index in pedal_indices):
+            raise ValueError(f"HAZY pedal metadata disagrees with chord voicings: {item['path']}")
+
+
+def _validate_hazy_inventory(manifest: dict[str, Any]) -> None:
+    if manifest.get("style") != "HAZY" or manifest.get("asset_type") != "midi_essentials":
+        return
+    expected = {
+        (role, variation)
+        for role in ("chords", "bass", "motif", "arpeggio", "drum_pattern")
+        for variation in ("A", "B", "C")
+    }
+    identities = [
+        (item["role"], item["metadata"].get("variation")) for item in manifest["files"]
+    ]
+    if len(identities) != 15 or len(set(identities)) != 15 or set(identities) != expected:
+        raise ValueError("HAZY MIDI Essentials requires exactly five roles in related A/B/C forms")
+    if any(
+        not item["path"].startswith("MIDI/HAZY_")
+        or PurePosixPath(item["path"]).suffix.lower() not in {".mid", ".midi"}
+        for item in manifest["files"]
+    ):
+        raise ValueError("HAZY MIDI Essentials files require canonical HAZY MIDI names")
+
 
 def _readme_for_midi_pack(pack_name: str, recipe: MidiEssentialsRecipe) -> str:
     return (
@@ -158,6 +348,64 @@ def _readme_for_midi_pack(pack_name: str, recipe: MidiEssentialsRecipe) -> str:
         "B is a restrained mutation, and C is a stronger bounded mutation. "
         "The drum clips use the declared General MIDI mapping on channel 10.\n"
     )
+
+
+def _readme_for_hazy_pack(
+    pack_name: str,
+    recipe: HazyMidiRecipe,
+    assets: list[GeneratedHazyMidiAsset],
+) -> str:
+    lines = [
+        f"# {pack_name}",
+        "",
+        "A deterministic pack of original HAZY MIDI material generated by Abletools. "
+        "HAZY describes a broad hazy-analog aesthetic; this pack does not recreate identifiable artist material.",
+        "",
+        f"- Key/mode: {recipe.key}",
+        f"- Harmonic archetype: {recipe.harmonic_archetype}",
+        f"- Degree sequence: {', '.join(str(degree) for degree in recipe.progression)}",
+        f"- Tempo: {recipe.bpm} BPM",
+        "- Meter and MIDI format: 4/4, type 0, 480 PPQ",
+        f"- Length: {recipe.bars} bars per clip",
+        f"- Seed: {recipe.seed}",
+        f"- Profile: {recipe.profile_version}",
+        "",
+        "A is the foundation. B preserves its identity with a restrained role-specific change. "
+        "C applies a stronger bounded change and declares every chromatic tone.",
+        "Drums use the declared General MIDI mapping on channel 10.",
+        "",
+        "## Clip inventory",
+        "",
+    ]
+    for asset in assets:
+        metadata = asset.metadata
+        borrowed = metadata["borrowed_tones"]
+        borrowed_text = (
+            ", ".join(
+                f"{entry['pitch_class']} ({entry['midi_note']}: {entry['reason']})"
+                for entry in borrowed
+            )
+            if borrowed
+            else "none"
+        )
+        timing = metadata["timing_model"]
+        timing_text = json.dumps(timing, sort_keys=True, separators=(",", ":")) if isinstance(timing, dict) else timing
+        lines.extend(
+            (
+                f"### {_hazy_asset_filename(recipe, asset)}",
+                "",
+                f"- Role / variation: {asset.role} / {asset.variation}",
+                f"- Scale or mode: {recipe.mode}",
+                f"- Degree sequence: {', '.join(str(degree) for degree in metadata['degree_sequence'])}",
+                f"- Chord symbols: {', '.join(metadata['chord_symbols'])}",
+                f"- Voicing or color: {metadata['voicing_or_color_behavior']}",
+                f"- Borrowed tones: {borrowed_text}",
+                f"- Timing model: {timing_text}",
+                f"- Variation relationship: {metadata['variation_relationship']}",
+                "",
+            )
+        )
+    return "\n".join(lines)
 
 
 def _write_readme(path: Path, contents: str) -> Path:
@@ -223,6 +471,76 @@ def build_druiid_midi_pack(output: str | Path, recipe: MidiEssentialsRecipe) -> 
         "generation_notes": [
             "Degree-first, scale-aware DRUIID musical behavior with bounded A/B/C mutation.",
             "No non-deterministic generation stage and no claimed DRUIID timbral profile.",
+        ],
+        "validation": validations,
+        "dependencies": [],
+    }
+    write_manifest(root / "manifest.json", manifest)
+    validate_pack(root)
+    archive = write_deterministic_zip(root, root.with_suffix(".zip"))
+    validate_zip(archive)
+    return root
+
+
+def build_hazy_midi_pack(output: str | Path, recipe: HazyMidiRecipe) -> Path:
+    """Build, validate, and archive one original HAZY MIDI Essentials pack."""
+    require_capability("hazy_midi_essentials")
+    require_capability("standard_midi")
+    require_capability("zip_pack")
+    if recipe.style != "HAZY":
+        raise ValueError("HAZY MIDI Essentials requires the HAZY profile")
+
+    root = Path(output)
+    midi_dir = root / "MIDI"
+    midi_dir.mkdir(parents=True, exist_ok=True)
+    assets = generate_hazy_midi_essentials(recipe)
+    pack_name = f"HAZY_MIDI_ESSENTIALS_{_hazy_key_token(recipe)}_S{recipe.seed:04d}"
+    _write_readme(root / "README.md", _readme_for_hazy_pack(pack_name, recipe, assets))
+
+    files: list[dict[str, Any]] = []
+    validations: list[dict[str, Any]] = []
+    for asset in assets:
+        path = write_midi_clip(
+            midi_dir / _hazy_asset_filename(recipe, asset),
+            asset.notes,
+            bpm=recipe.bpm,
+            bars=recipe.bars,
+            track_name=f"HAZY {asset.role} {asset.variation}",
+        )
+        relative = path.relative_to(root).as_posix()
+        item = {
+            "path": relative,
+            "role": asset.role,
+            "sha256": _sha256(path),
+            "format": {"container": "Standard MIDI File", "midi_format": 0, "ppq": PPQ},
+            "metadata": asset.metadata,
+        }
+        result = _validate_midi_entry(path, item)
+        files.append(item)
+        validations.append({"file": relative, "validator": "abletools.midi", "result": result})
+
+    manifest = {
+        "schema_version": "1.0.0",
+        "pack_name": pack_name,
+        "version": "1.0.0",
+        "generator_version": __version__,
+        "style": "HAZY",
+        "asset_type": "midi_essentials",
+        "seed": recipe.seed,
+        "tempo_bpm": recipe.bpm,
+        "meter": "4/4",
+        "key": recipe.key,
+        "root": recipe.root,
+        "scale": recipe.scale,
+        "bars": recipe.bars,
+        "profile_version": recipe.profile_version,
+        "recipe": recipe.canonical_data(),
+        "files": files,
+        "format": {"container": "Standard MIDI File", "midi_format": 0, "ppq": PPQ},
+        "generation_notes": [
+            "Original HAZY modal behavior with role-isolated deterministic streams and related A/B/C forms.",
+            "Chromatic notes are sparse, declared per asset, and checked against the parsed MIDI bytes.",
+            "No native Ableton, Serum 2, Max for Live, WAV, or publication stage is present.",
         ],
         "validation": validations,
         "dependencies": [],
@@ -343,6 +661,7 @@ def validate_pack(root: str | Path) -> dict[str, Any]:
     if not readme.is_file() or not readme.read_text(encoding="utf-8").strip():
         raise ValueError("pack requires a non-empty README.md")
     manifest = load_manifest(pack_root / "manifest.json", check_files=True)
+    _validate_hazy_inventory(manifest)
     expected_files = {"README.md", "manifest.json", *(item["path"] for item in manifest["files"])}
     actual_files = {
         path.relative_to(pack_root).as_posix()
