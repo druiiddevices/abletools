@@ -718,13 +718,16 @@ def validate_pack(root: str | Path) -> dict[str, Any]:
             expected_metadata = {
                 "device_count": result["devices"],
                 "family": result["family"],
+                "initial_state_authority": result["initial_state_authority"],
                 "macro_count": result["macros"],
+                "mapping_model_version": result["mapping_model_version"],
                 "minimum_live_version": "12.0",
                 "native_format": False,
                 "rack_type": result["rack_type"],
                 "role": "rack_blueprint",
                 "seed": result["seed"],
                 "style": result["style"],
+                "target_count": result["targets"],
             }
             if metadata != expected_metadata:
                 raise ValueError(f"rack blueprint metadata disagrees with validated JSON: {item['path']}")

@@ -69,6 +69,7 @@ Rack blueprints are deterministic JSON construction specifications, not native A
 - a closed registry of documented Ableton Live 12 stock devices and parameter domains
 - rack-type-aware topology checks for audio effects, Operator instruments, and MIDI effects
 - exact macro counts, resolved mapping targets, safe ranges, neutral states, and complete variations
+- one evaluable linear mapping model, exclusive target ownership, and INIT-authoritative device settings
 - deterministic DRUIID and HAZY catalogs, manifests, README files, checksums, and ZIPs
 
 Each style pack contains `AGE_MACHINE`, `RHYTHM_FRACTURE`, `OPERATOR_SUB_FORM`,

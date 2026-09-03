@@ -9,10 +9,20 @@ from typing import Any
 
 from .ableton_registry import DEVICE_REGISTRY, get_device, get_parameter
 from .capabilities import get_capability
-from .rack_blueprint import BLUEPRINT_NOTICE, BLUEPRINT_SCHEMA_VERSION, RACK_FAMILIES, VARIATIONS
+from .rack_blueprint import (
+    BLUEPRINT_NOTICE,
+    BLUEPRINT_SCHEMA_VERSION,
+    INITIAL_STATE_AUTHORITY,
+    MAPPING_MODEL_VERSION,
+    RACK_FAMILIES,
+    VARIATIONS,
+    evaluate_target_mapping,
+    quantize_mapping_value,
+)
 
 TOP_LEVEL_FIELDS = {
     "schema_version", "blueprint_notice", "capability", "native_format", "rack_name", "family",
+    "mapping_model_version", "initial_state_authority",
     "rack_type", "style", "version", "minimum_live_version", "seed", "dependencies",
     "intended_sources", "topology", "input_assumptions", "dry_strategy", "gain_staging",
     "behavior_notes", "macros", "macro_variations", "randomization_exclusions",
@@ -36,6 +46,8 @@ NAME = re.compile(r"^[A-Z][A-Z0-9_]+$")
 ID = re.compile(r"^[a-z][a-z0-9_]*$")
 COLOR = re.compile(r"^#[0-9A-F]{6}$")
 SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+FLOAT_MAPPING_TOLERANCE = 1e-6
+INTEGER_QUANTIZATION_TOLERANCE = 0.5
 
 
 def _object(value: Any, fields: set[str], label: str) -> dict[str, Any]:
@@ -125,10 +137,10 @@ def _validate_macro(
     neutral = _number(macro["neutral_value"], "macro neutral_value")
     if not (0 <= minimum < maximum <= 127 and minimum <= default <= maximum and minimum <= neutral <= maximum):
         raise ValueError("macro range, default, and neutral must be bounded from 0 to 127")
-    if macro["polarity"] not in {"unipolar", "bipolar"} or macro["curve"] not in {
-        "linear", "logarithmic", "exponential"
-    }:
+    if macro["polarity"] not in {"unipolar", "bipolar"}:
         raise ValueError("macro polarity or curve is unknown")
+    if macro["curve"] != "linear":
+        raise ValueError("Milestone 3A supports linear macro mappings only")
     if not isinstance(macro["exclude_from_randomization"], bool):
         raise ValueError("macro randomization exclusion must be boolean")
     if macro["exclude_from_randomization"] and f"macro:{macro['name']}" not in exclusions:
@@ -165,6 +177,22 @@ def _validate_macro(
         if target["direction"] not in {"direct", "inverse"}:
             raise ValueError("macro target direction is unknown")
         _text(target["purpose"], "macro target purpose")
+        evaluated = evaluate_target_mapping(macro, target, neutral)
+        tolerance = (
+            INTEGER_QUANTIZATION_TOLERANCE
+            if parameter.kind == "integer"
+            else FLOAT_MAPPING_TOLERANCE
+        )
+        if abs(evaluated - target_neutral) > tolerance:
+            raise ValueError(
+                f"target neutral is not reachable at macro neutral: {path}:{parameter_id}"
+            )
+        expected_setting = quantize_mapping_value(evaluated, parameter.kind)
+        actual_setting = device["settings"].get(parameter_id)
+        if actual_setting is None or abs(float(actual_setting) - float(expected_setting)) > FLOAT_MAPPING_TOLERANCE:
+            raise ValueError(
+                f"INIT does not reproduce mapped device state: {path}:{parameter_id}"
+            )
 
 
 def validate_rack_blueprint(data: dict[str, Any]) -> dict[str, Any]:
@@ -174,6 +202,10 @@ def validate_rack_blueprint(data: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"rack blueprint schema_version must be {BLUEPRINT_SCHEMA_VERSION}")
     if data["blueprint_notice"] != BLUEPRINT_NOTICE or data["native_format"] is not False:
         raise ValueError("blueprint must prominently declare that it is not a native Ableton file")
+    if data["mapping_model_version"] != MAPPING_MODEL_VERSION:
+        raise ValueError("rack blueprint must use the supported linear mapping model")
+    if data["initial_state_authority"] != INITIAL_STATE_AUTHORITY:
+        raise ValueError("rack blueprint must declare macro_variations.INIT as initial-state authority")
     if data["capability"] != "ableton_rack_blueprint" or not get_capability(data["capability"]).enabled:
         raise ValueError("rack blueprint capability is unknown or disabled")
     if not isinstance(data["rack_name"], str) or not NAME.fullmatch(data["rack_name"]):
@@ -288,6 +320,16 @@ def validate_rack_blueprint(data: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("macro indices must be unique, contiguous, and 1-based")
     if len(names) != len(set(names)):
         raise ValueError("macro names must be unique")
+    target_owners: dict[tuple[str, str], str] = {}
+    for macro in macros:
+        for target in macro["targets"]:
+            identity = (target["device_path"], target["parameter_id"])
+            if identity in target_owners:
+                raise ValueError(
+                    "duplicate target ownership across macros: "
+                    f"{identity[0]}:{identity[1]} ({target_owners[identity]}, {macro['name']})"
+                )
+            target_owners[identity] = macro["name"]
     multi_target_count = sum(len(macro["targets"]) >= 2 for macro in macros)
     required_multi = 6 if data["rack_type"] == "operator_instrument_rack" else 4
     if multi_target_count < required_multi:
@@ -362,13 +404,16 @@ def validate_rack_blueprint(data: dict[str, Any]) -> dict[str, Any]:
         "blueprint": data["rack_name"],
         "devices": len(all_devices),
         "family": data["family"],
+        "initial_state_authority": data["initial_state_authority"],
         "macros": len(macros),
+        "mapping_model_version": data["mapping_model_version"],
         "native_format": False,
         "rack_type": data["rack_type"],
         "result": "valid",
         "schema_version": data["schema_version"],
         "seed": data["seed"],
         "style": data["style"],
+        "targets": len(target_owners),
     }
 
 
@@ -379,3 +424,53 @@ def validate_rack_blueprint_file(path: str | Path) -> dict[str, Any]:
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("rack blueprint must be valid UTF-8 JSON") from error
     return validate_rack_blueprint(data)
+
+
+def audit_rack_blueprint_mappings(data: dict[str, Any]) -> dict[str, int]:
+    """Return explicit mapping-integrity counts after strict validation succeeds."""
+    validate_rack_blueprint(data)
+    devices = {
+        device["path"]: device
+        for chain in data["topology"]["chains"]
+        for device in chain["devices"]
+    }
+    identities: set[tuple[str, str]] = set()
+    targets = 0
+    neutral_coherent = 0
+    reconstructible = 0
+    for macro in data["macros"]:
+        for target in macro["targets"]:
+            targets += 1
+            identity = (target["device_path"], target["parameter_id"])
+            identities.add(identity)
+            device = devices[target["device_path"]]
+            parameter = get_parameter(device["registry_id"], target["parameter_id"])
+            evaluated = evaluate_target_mapping(macro, target, macro["neutral_value"])
+            tolerance = (
+                INTEGER_QUANTIZATION_TOLERANCE
+                if parameter.kind == "integer"
+                else FLOAT_MAPPING_TOLERANCE
+            )
+            if abs(evaluated - float(target["neutral"])) <= tolerance:
+                neutral_coherent += 1
+            expected = quantize_mapping_value(evaluated, parameter.kind)
+            if abs(float(device["settings"][target["parameter_id"]]) - float(expected)) <= FLOAT_MAPPING_TOLERANCE:
+                reconstructible += 1
+    bounded_variation_values = sum(
+        1
+        for variation in data["macro_variations"].values()
+        for name, value in variation.items()
+        if next(macro for macro in data["macros"] if macro["name"] == name)["minimum"]
+        <= value
+        <= next(macro for macro in data["macros"] if macro["name"] == name)["maximum"]
+    )
+    return {
+        "blueprints": 1,
+        "macros": len(data["macros"]),
+        "targets": targets,
+        "neutral_coherent_targets": neutral_coherent,
+        "unique_target_identities": len(identities),
+        "reconstructible_init_targets": reconstructible,
+        "complete_variations": len(data["macro_variations"]),
+        "bounded_variation_values": bounded_variation_values,
+    }

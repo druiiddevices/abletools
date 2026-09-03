@@ -50,6 +50,11 @@ Putting Scale after Random is useful when the output must be returned to the sel
 
 Macro ranges must reflect discrete device semantics where appropriate. Integer controls such as arpeggiator rate divisions, Random choices, or Scale range are declared with integer endpoints. Each target includes its full device path, parameter ID, bounds, neutral point, direction, and musical purpose.
 
+Milestone 3A uses linear mappings only. Every target neutral must be reachable at its macro's neutral
+position, each mapped device setting must reproduce the `INIT` value, and each device/parameter pair
+has exactly one macro owner. Pitch or range controls that genuinely move in both directions use a
+centered bipolar macro rather than treating one extreme as neutral.
+
 ## Validation boundary
 
 Blueprint validation can prove JSON-schema shape, closed-registry membership, MIDI-only topology, path resolution, parameter domains, macro completeness, deterministic bytes, manifest integrity, and ZIP integrity. It cannot prove a native rack opens, recalls, or sounds useful in Ableton Live.

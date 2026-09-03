@@ -34,7 +34,8 @@ def _readme(recipe: RackBlueprintRecipe, blueprints: list[dict[str, Any]]) -> st
         device_count = sum(len(chain["devices"]) for chain in blueprint["topology"]["chains"])
         lines.append(
             f"- `{_filename(blueprint)}` — {blueprint['rack_type']}; "
-            f"{device_count} devices; {len(blueprint['macros'])} macros."
+            f"{device_count} devices; {len(blueprint['macros'])} macros; "
+            f"{sum(len(macro['targets']) for macro in blueprint['macros'])} exclusively owned mappings."
         )
     lines.extend(
         [
@@ -79,13 +80,16 @@ def build_rack_blueprint_pack(output: str | Path, recipe: RackBlueprintRecipe) -
                 "metadata": {
                     "device_count": result["devices"],
                     "family": blueprint["family"],
+                    "initial_state_authority": result["initial_state_authority"],
                     "macro_count": result["macros"],
+                    "mapping_model_version": result["mapping_model_version"],
                     "minimum_live_version": blueprint["minimum_live_version"],
                     "native_format": False,
                     "rack_type": blueprint["rack_type"],
                     "role": role,
                     "seed": recipe.seed,
                     "style": recipe.style,
+                    "target_count": result["targets"],
                 },
             }
         )

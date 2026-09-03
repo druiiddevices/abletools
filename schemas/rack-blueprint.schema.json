@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "blueprint_notice", "capability", "native_format",
+    "mapping_model_version", "initial_state_authority",
     "rack_name", "family", "rack_type", "style", "version",
     "minimum_live_version", "seed", "dependencies", "intended_sources",
     "topology", "input_assumptions", "dry_strategy", "gain_staging",
@@ -17,6 +18,8 @@
     "blueprint_notice": {"const": "VALIDATED BUILD SPECIFICATION — NOT AN ABLETON .ADG/.ADV/.AGR/.AMXD FILE"},
     "capability": {"const": "ableton_rack_blueprint"},
     "native_format": {"const": false},
+    "mapping_model_version": {"const": "linear-v1"},
+    "initial_state_authority": {"const": "macro_variations.INIT"},
     "rack_name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
     "family": {"enum": ["AGE_MACHINE", "RHYTHM_FRACTURE", "OPERATOR_SUB_FORM", "OPERATOR_MEMORY_PAD", "MIDI_PATTERN_MUTATOR"]},
     "rack_type": {"enum": ["audio_effect_rack", "operator_instrument_rack", "midi_effect_rack"]},
@@ -122,7 +125,7 @@
         "color": {"type": "string", "pattern": "^#[0-9A-F]{6}$"}, "info_text": {"type": "string", "minLength": 1},
         "default": {"type": "number"}, "minimum": {"type": "number"}, "maximum": {"type": "number"},
         "neutral_value": {"type": "number"}, "polarity": {"enum": ["unipolar", "bipolar"]},
-        "curve": {"enum": ["linear", "logarithmic", "exponential"]}, "exclude_from_randomization": {"type": "boolean"},
+        "curve": {"const": "linear"}, "exclude_from_randomization": {"type": "boolean"},
         "zero_behavior": {"type": "string", "minLength": 1},
         "targets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/target"}}
       }

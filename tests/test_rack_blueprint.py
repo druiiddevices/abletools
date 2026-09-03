@@ -10,10 +10,11 @@ from abletools.rack_blueprint import (
     BLUEPRINT_NOTICE,
     RACK_FAMILIES,
     RackBlueprintRecipe,
+    evaluate_target_mapping,
     generate_rack_blueprints,
 )
 from abletools.rack_pack import build_rack_blueprint_pack
-from abletools.rack_validation import validate_rack_blueprint
+from abletools.rack_validation import audit_rack_blueprint_mappings, validate_rack_blueprint
 
 
 class RackBlueprintTests(unittest.TestCase):
@@ -213,6 +214,102 @@ class RackBlueprintTests(unittest.TestCase):
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(schema["properties"]["native_format"], {"const": False})
+        self.assertEqual(schema["$defs"]["macro"]["properties"]["curve"], {"const": "linear"})
+
+    def test_positive_mapping_audit_covers_all_ten_blueprints(self) -> None:
+        catalogs = {style: self._catalog(style) for style in ("DRUIID", "HAZY")}
+        totals = {
+            "blueprints": 0,
+            "macros": 0,
+            "targets": 0,
+            "neutral_coherent_targets": 0,
+            "unique_target_identities": 0,
+            "reconstructible_init_targets": 0,
+            "complete_variations": 0,
+            "bounded_variation_values": 0,
+        }
+        for catalog in catalogs.values():
+            for blueprint in catalog:
+                audit = audit_rack_blueprint_mappings(blueprint)
+                for field in totals:
+                    totals[field] += audit[field]
+                for macro in blueprint["macros"]:
+                    if macro["exclude_from_randomization"]:
+                        self.assertEqual(
+                            {values[macro["name"]] for values in blueprint["macro_variations"].values()},
+                            {macro["default"]},
+                        )
+        self.assertEqual(totals["blueprints"], 10)
+        self.assertEqual(totals["macros"], 136)
+        self.assertEqual(totals["targets"], 210)
+        self.assertEqual(totals["neutral_coherent_targets"], 210)
+        self.assertEqual(totals["unique_target_identities"], 210)
+        self.assertEqual(totals["reconstructible_init_targets"], 210)
+        self.assertEqual(totals["complete_variations"], 40)
+        self.assertEqual(totals["bounded_variation_values"], 544)
+        druiid = {item["family"]: item for item in catalogs["DRUIID"]}
+        hazy = {item["family"]: item for item in catalogs["HAZY"]}
+        for family in RACK_FAMILIES:
+            self.assertNotEqual(druiid[family]["topology"], hazy[family]["topology"])
+            self.assertNotEqual(druiid[family]["macros"], hazy[family]["macros"])
+
+    def test_direct_target_neutral_must_match_mapping_math(self) -> None:
+        blueprint = copy.deepcopy(self._catalog()[0])
+        macro = next(item for item in blueprint["macros"] if item["name"] == "AGE")
+        target = next(item for item in macro["targets"] if item["direction"] == "direct")
+        target["neutral"] += 1
+        with self.assertRaisesRegex(ValueError, "target neutral is not reachable"):
+            validate_rack_blueprint(blueprint)
+
+    def test_inverse_target_neutral_must_match_mapping_math(self) -> None:
+        blueprint = copy.deepcopy(self._catalog()[0])
+        macro = next(item for item in blueprint["macros"] if item["name"] == "AGE")
+        target = next(item for item in macro["targets"] if item["direction"] == "inverse")
+        self.assertEqual(evaluate_target_mapping(macro, target, macro["neutral_value"]), target["maximum"])
+        target["neutral"] -= 1
+        with self.assertRaisesRegex(ValueError, "target neutral is not reachable"):
+            validate_rack_blueprint(blueprint)
+
+    def test_duplicate_target_ownership_across_macros_fails(self) -> None:
+        blueprint = copy.deepcopy(self._catalog()[0])
+        blueprint["macros"][1]["targets"].append(copy.deepcopy(blueprint["macros"][0]["targets"][0]))
+        with self.assertRaisesRegex(ValueError, "duplicate target ownership across macros"):
+            validate_rack_blueprint(blueprint)
+
+    def test_init_must_reproduce_mapped_device_state(self) -> None:
+        blueprint = copy.deepcopy(self._catalog()[0])
+        macro = next(item for item in blueprint["macros"] if item["name"] == "AGE")
+        target = next(item for item in macro["targets"] if item["direction"] == "direct")
+        device = next(
+            device
+            for chain in blueprint["topology"]["chains"]
+            for device in chain["devices"]
+            if device["path"] == target["device_path"]
+        )
+        device["settings"][target["parameter_id"]] += 1
+        with self.assertRaisesRegex(ValueError, "INIT does not reproduce mapped device state"):
+            validate_rack_blueprint(blueprint)
+
+    def test_integer_quantization_mismatch_fails(self) -> None:
+        blueprint = copy.deepcopy(self._family(self._catalog(), "MIDI_PATTERN_MUTATOR"))
+        macro = next(item for item in blueprint["macros"] if item["name"] == "ROOT")
+        target = macro["targets"][0]
+        target["neutral"] += 1
+        device = next(
+            device
+            for chain in blueprint["topology"]["chains"]
+            for device in chain["devices"]
+            if device["path"] == target["device_path"]
+        )
+        device["settings"][target["parameter_id"]] = target["neutral"]
+        with self.assertRaisesRegex(ValueError, "target neutral is not reachable"):
+            validate_rack_blueprint(blueprint)
+
+    def test_nonlinear_mapping_curves_fail_closed(self) -> None:
+        blueprint = copy.deepcopy(self._catalog()[0])
+        blueprint["macros"][0]["curve"] = "logarithmic"
+        with self.assertRaisesRegex(ValueError, "linear macro mappings only"):
+            validate_rack_blueprint(blueprint)
 
 
 if __name__ == "__main__":

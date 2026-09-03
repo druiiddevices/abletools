@@ -9,11 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from .ableton_registry import get_device
+from .ableton_registry import get_device, get_parameter
 from .capabilities import require_capability
 
 BLUEPRINT_SCHEMA_VERSION = "1.0.0"
 BLUEPRINT_NOTICE = "VALIDATED BUILD SPECIFICATION — NOT AN ABLETON .ADG/.ADV/.AGR/.AMXD FILE"
+MAPPING_MODEL_VERSION = "linear-v1"
+INITIAL_STATE_AUTHORITY = "macro_variations.INIT"
 RACK_FAMILIES = (
     "AGE_MACHINE",
     "RHYTHM_FRACTURE",
@@ -62,6 +64,33 @@ class RackBlueprint:
 
     def to_data(self) -> dict[str, Any]:
         return json.loads(self.canonical_json)
+
+
+def evaluate_target_mapping(
+    macro: dict[str, Any], target: dict[str, Any], position: float
+) -> float:
+    """Evaluate the Milestone 3A linear mapping contract without quantization."""
+    if macro["curve"] != "linear":
+        raise ValueError("Milestone 3A supports linear macro mappings only")
+    minimum = float(macro["minimum"])
+    maximum = float(macro["maximum"])
+    value = float(position)
+    if maximum <= minimum or not minimum <= value <= maximum:
+        raise ValueError("macro position is outside a valid mapping range")
+    normalized = (value - minimum) / (maximum - minimum)
+    target_minimum = float(target["minimum"])
+    target_maximum = float(target["maximum"])
+    span = target_maximum - target_minimum
+    if target["direction"] == "direct":
+        return target_minimum + normalized * span
+    if target["direction"] == "inverse":
+        return target_maximum - normalized * span
+    raise ValueError("macro target direction is unknown")
+
+
+def quantize_mapping_value(value: float, parameter_kind: str) -> float | int:
+    """Apply the documented R1 nearest-integer rule for stepped parameters."""
+    return int(round(value)) if parameter_kind == "integer" else value
 
 
 def _rng(recipe: RackBlueprintRecipe, family: str) -> random.Random:
@@ -134,7 +163,7 @@ def _macro(
     bipolar: bool = False,
     output: bool = False,
 ) -> dict[str, Any]:
-    neutral = 64.0 if bipolar or output else 0.0
+    neutral = 63.5 if bipolar or output else 0.0
     return {
         "index": index,
         "name": name,
@@ -144,7 +173,7 @@ def _macro(
         "minimum": 0.0,
         "maximum": 127.0,
         "neutral_value": neutral,
-        "polarity": "bipolar" if bipolar else "unipolar",
+        "polarity": "bipolar" if bipolar or output else "unipolar",
         "curve": "linear",
         "exclude_from_randomization": output,
         "zero_behavior": (
@@ -165,7 +194,11 @@ def _variations(macros: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
             if macro["exclude_from_randomization"]:
                 values[macro["name"]] = macro["default"]
             elif macro["polarity"] == "bipolar":
-                values[macro["name"]] = 64.0 if variation == "INIT" else min(127.0, 64.0 + level * 0.42)
+                values[macro["name"]] = (
+                    macro["neutral_value"]
+                    if variation == "INIT"
+                    else min(127.0, macro["neutral_value"] + level * 0.42)
+                )
             else:
                 values[macro["name"]] = macro["neutral_value"] if variation == "INIT" else level
         result[variation] = values
@@ -254,6 +287,8 @@ def _base_blueprint(
         "blueprint_notice": BLUEPRINT_NOTICE,
         "capability": "ableton_rack_blueprint",
         "native_format": False,
+        "mapping_model_version": MAPPING_MODEL_VERSION,
+        "initial_state_authority": INITIAL_STATE_AUTHORITY,
         "rack_name": f"{recipe.style}_{family}",
         "family": family,
         "rack_type": rack_type,
@@ -329,7 +364,38 @@ def _base_blueprint(
             "native_export_gate": "closed",
         },
     }
+    _materialize_initial_state(blueprint)
     return blueprint
+
+
+def _materialize_initial_state(blueprint: dict[str, Any]) -> None:
+    """Make INIT the sole authoritative mapped device state for generated data."""
+    devices = {
+        device["path"]: device
+        for chain in blueprint["topology"]["chains"]
+        for device in chain["devices"]
+    }
+    owners: set[tuple[str, str]] = set()
+    for macro in blueprint["macros"]:
+        position = macro["neutral_value"]
+        for target in macro["targets"]:
+            identity = (target["device_path"], target["parameter_id"])
+            if identity in owners:
+                raise ValueError(
+                    f"generator assigned duplicate target ownership: {identity[0]}:{identity[1]}"
+                )
+            owners.add(identity)
+            device = devices[target["device_path"]]
+            parameter = get_parameter(device["registry_id"], target["parameter_id"])
+            evaluated = evaluate_target_mapping(macro, target, position)
+            tolerance = 0.5 if parameter.kind == "integer" else 1e-6
+            if abs(evaluated - float(target["neutral"])) > tolerance:
+                raise ValueError(
+                    "generator declared an unreachable target neutral: "
+                    f"{identity[0]}:{identity[1]}"
+                )
+            value = quantize_mapping_value(evaluated, parameter.kind)
+            device["settings"][target["parameter_id"]] = value
 
 
 def _age_machine(recipe: RackBlueprintRecipe) -> dict[str, Any]:
@@ -350,15 +416,15 @@ def _age_machine(recipe: RackBlueprintRecipe) -> dict[str, Any]:
         macro_specs = [
             ("AGE", [_target(p+"tone", "frequency_hz", 2500, 12000, 12000, "darkens the memory layer", inverse=True), _target(p+"patina", "drive_db", 0, 14, 0, "adds bounded wear")]),
             ("DRIFT", [_target(p+"wander", "amount_percent", 0, 42, 0, "slow level drift"), _target(p+"memory", "modulation_percent", 0, 38, 0, "delay drift")]),
-            ("DUST", [_target(p+"patina", "drive_db", 0, 18, 0, "harmonic dust"), _target(p+"patina", "dry_wet_percent", 35, 82, 35, "dust blend")]),
+            ("DUST", [_target(p+"patina", "dry_wet_percent", 0, 82, 0, "harmonic dust blend")]),
             ("FOCUS", [_target(p+"tone", "resonance_percent", 8, 38, 8, "filter emphasis")]),
-            ("BLOOM", [_target(p+"memory", "dry_wet_percent", 0, 34, 0, "echo presence"), _target(p+"memory", "feedback_percent", 8, 48, 8, "bounded repeats")]),
+            ("WOW", [_target(p+"wander", "rate_hz", 0.03, 0.4, 0.03, "wow speed"), _target(p+"wander", "shape_percent", 0, 64, 0, "wow contour")]),
+            ("BLOOM", [_target(p+"memory", "dry_wet_percent", 0, 34, 0, "echo presence"), _target(p+"memory", "feedback_percent", 0, 48, 0, "bounded repeats")]),
             ("WIDTH", [_target(p+"output", "width_percent", 100, 145, 100, "upper-band width")]),
-            ("WOW", [_target(p+"wander", "rate_hz", 0.03, 0.4, 0.03, "wow speed")]),
-            ("TONE", [_target(p+"tone", "frequency_hz", 1800, 16000, 16000, "tone contour", inverse=True)]),
-            ("ECHO", [_target(p+"memory", "feedback_percent", 0, 55, 0, "feedback")]),
-            ("SAT", [_target(p+"patina", "drive_db", 0, 12, 0, "saturation")]),
-            ("BLEND", [_target(p+"patina", "dry_wet_percent", 0, 80, 0, "effect blend")]),
+            ("TONE", [_target(p+"tone", "drive_db", 0, 10, 0, "filter color")]),
+            ("ECHO", [_target(p+"memory", "left_time_sixteenths", 5, 12, 5, "left echo spacing"), _target(p+"memory", "right_time_sixteenths", 7, 16, 7, "right echo spacing")]),
+            ("MOTION", [_target(p+"tone", "lfo_amount_percent", 0, 35, 0, "filter motion depth"), _target(p+"tone", "lfo_rate_hz", 0.03, 0.5, 0.03, "filter motion rate")]),
+            ("SHADOW", [_target(p+"memory", "filter_frequency_hz", 1000, 4200, 4200, "darkens the echo return", inverse=True)]),
             ("OUT", [_target(p+"output", "gain_db", -12, 6, -3, "final trim")]),
         ]
         dry_mode = "parallel_dry_chain"
@@ -376,15 +442,15 @@ def _age_machine(recipe: RackBlueprintRecipe) -> dict[str, Any]:
         macro_specs = [
             ("AGE", [_target(p+"focus", "frequency_hz", 900, 11000, 11000, "spectral age", inverse=True), _target(p+"edge", "drive_db", 0, 16, 0, "edge density")]),
             ("DRIFT", [_target(p+"pulse", "amount_percent", 0, 72, 0, "rhythmic drift"), _target(p+"pulse", "shape_percent", 30, 88, 30, "drift contour")]),
-            ("DUST", [_target(p+"edge", "drive_db", 0, 20, 0, "distortion dust"), _target(p+"edge", "dry_wet_percent", 25, 88, 25, "dust blend")]),
+            ("DUST", [_target(p+"edge", "dry_wet_percent", 0, 88, 0, "distortion dust blend")]),
             ("FOCUS", [_target(p+"focus", "resonance_percent", 5, 50, 5, "resonant focus")]),
-            ("WOW", [_target(p+"pulse", "rate_hz", 0.05, 1.8, 0.05, "bounded wow"), _target(p+"pulse", "amount_percent", 0, 38, 0, "wow depth")]),
+            ("WOW", [_target(p+"pulse", "rate_hz", 0.05, 1.8, 0.05, "bounded wow"), _target(p+"bloom", "modulation_percent", 0, 40, 0, "echo wow depth")]),
             ("BLOOM", [_target(p+"bloom", "dry_wet_percent", 0, 28, 0, "short bloom"), _target(p+"bloom", "feedback_percent", 0, 34, 0, "bounded bloom tail")]),
-            ("WIDTH", [_target(p+"output", "width_percent", 65, 115, 100, "bounded width"), _target(p+"pulse", "phase_degrees", 90, 180, 180, "stereo motion phase")]),
+            ("WIDTH", [_target(p+"output", "width_percent", 100, 115, 100, "bounded width"), _target(p+"pulse", "phase_degrees", 180, 270, 180, "stereo motion phase")]),
             ("TONE", [_target(p+"focus", "drive_db", 0, 10, 0, "filter drive")]),
-            ("GRIT", [_target(p+"edge", "drive_db", 0, 12, 0, "grit")]),
-            ("SHAPE", [_target(p+"pulse", "shape_percent", 0, 90, 0, "motion shape")]),
-            ("MOTION", [_target(p+"pulse", "rate_hz", 0.1, 8.0, 0.1, "motion speed")]),
+            ("GRIT", [_target(p+"focus", "lfo_amount_percent", 0, 38, 0, "filter-edge movement")]),
+            ("SHAPE", [_target(p+"bloom", "left_time_sixteenths", 2, 8, 2, "left rhythmic shape"), _target(p+"bloom", "right_time_sixteenths", 3, 12, 3, "right rhythmic shape")]),
+            ("MOTION", [_target(p+"focus", "lfo_rate_hz", 0.1, 8.0, 0.1, "motion speed")]),
             ("OUT", [_target(p+"output", "gain_db", -12, 6, -3, "final trim")]),
         ]
         dry_mode = "serial_mix"
@@ -410,18 +476,18 @@ def _rhythm_fracture(recipe: RackBlueprintRecipe) -> dict[str, Any]:
     chains = ([_chain("dry", "Dry Pulse", "unprocessed_reference", [], level_db=-2.0, pass_through=True)] if hazy else []) + [_chain(chain_id, "Fracture", "rhythmic_processing", devices, level_db=-4.0 if hazy else 0.0)]
     p = f"chains/{chain_id}/devices/"
     macro_specs = [
-        ("RATE", [_target(p+"repeat", "interval_sixteenths", 1, 16, 8, "repeat interval")]),
-        ("GATE", [_target(p+"repeat", "gate_sixteenths", 1, 12, 3, "repeat gate"), _target(p+"repeat", "decay_percent", 0, 75, 0, "repeat decay")]),
-        ("REPEAT", [_target(p+"repeat", "chance_percent", 0, 70, 0, "repeat probability"), _target(p+"repeat", "variation_percent", 0, 60, 0, "repeat variation")]),
+        ("RATE", [_target(p+"repeat", "interval_sixteenths", 8 if hazy else 4, 16, 8 if hazy else 4, "repeat interval")]),
+        ("GATE", [_target(p+"repeat", "gate_sixteenths", 3, 12, 3, "repeat gate"), _target(p+"repeat", "decay_percent", 0, 75, 0, "repeat decay")]),
+        ("REPEAT", [_target(p+"repeat", "chance_percent", 0, 70, 0, "repeat probability")]),
         ("OFFSET", [_target(p+"repeat", "offset_sixteenths", 0, 12, 0, "repeat offset")]),
-        ("MUTATE", [_target(p+"repeat", "variation_percent", 0, 72, 0, "bounded mutation"), _target(p+"repeat", "pitch_semitones", -7, 7, 0, "repeat pitch")]),
-        ("TONE", [_target(p+"window", "frequency_hz", 180, 14000, 14000 if hazy else 180, "filter window")]),
-        ("IMPACT", [_target(p+"impact", "drive_db", 0, 15, 0, "transient density"), _target(p+"impact", "dry_wet_percent", 0, 75, 0, "impact blend")]),
-        ("GRID", [_target(p+"repeat", "grid_sixteenths", 1, 8, 4, "repeat grid")]),
-        ("FILTER", [_target(p+"window", "resonance_percent", 0, 46, 0, "filter focus"), _target(p+"window", "drive_db", 0, 8, 0, "filter drive")]),
-        ("SPACE", [_target(p+"ghost", "dry_wet_percent", 0, 28, 0, "ghost delay") if hazy else _target(p+"window", "lfo_amount_percent", 0, 28, 0, "filter movement")]),
+        ("MUTATE", [_target(p+"repeat", "variation_percent", 0, 72, 0, "bounded mutation"), _target(p+"repeat", "pitch_semitones", 0, 7, 0, "bounded upward repeat pitch")]),
+        ("TONE", [_target(p+"window", "frequency_hz", 180, 14000, 14000 if hazy else 180, "filter window", inverse=hazy)]),
+        ("IMPACT", [_target(p+"impact", "drive_db", 0, 15, 0, "transient density"), _target(p+"window", "drive_db", 0, 8, 0, "filter impact")]),
+        ("GRID", [_target(p+"repeat", "grid_sixteenths", 2 if hazy else 1, 8, 2 if hazy else 1, "repeat grid")]),
+        ("FILTER", [_target(p+"window", "resonance_percent", 0, 46, 0, "filter focus"), _target(p+"window", "lfo_amount_percent", 0, 28, 0, "filter movement")]),
+        ("SPACE", [_target(p+"ghost", "dry_wet_percent", 0, 28, 0, "ghost delay") if hazy else _target(p+"window", "lfo_rate_hz", 0.05, 2.0, 0.05, "filter movement rate")]),
         ("MIX", [_target(p+"impact", "dry_wet_percent", 0, 100, 0, "processed blend")]),
-        ("OUT", [_target(p+"output", "gain_db", -12, 6, -4, "final trim")]),
+        ("OUT", [_target(p+"output", "gain_db", -13, 5, -4, "final trim")]),
     ]
     macros = [_macro(i, name, targets, recipe.style, output=name == "OUT") for i, (name, targets) in enumerate(macro_specs, 1)]
     return _base_blueprint(recipe, "RHYTHM_FRACTURE", "audio_effect_rack", chains, macros, intended_sources=["drums", "percussion", "short_tonal_events"], dry_mode="parallel_dry_chain" if hazy else "serial_mix")
@@ -447,41 +513,96 @@ def _operator_rack(recipe: RackBlueprintRecipe, family: str) -> dict[str, Any]:
         _device(chain_id, "limiter", "safety", {"input_gain_db": 0.0, "ceiling_db": -1.0, "release_ms": 260.0, "stereo_link_percent": 100.0}),
     ])
     p = f"chains/{chain_id}/devices/"
-    space_path = p + ("space" if pad else "shadow" if hazy else "body")
-    body_targets = [_target(p+"synth", "oscillator_a_level_db", -18, 0, -5, "carrier body"), _target(p+"body", "drive_db", 0, 12, 0, "downstream density")]
-    fm_targets = [_target(p+"synth", "oscillator_b_level_db", -60, -8, -60, "FM depth"), _target(p+"synth", "oscillator_c_level_db", -60, -16, -60, "secondary color")]
-    bite_targets = [_target(p+"synth", "filter_resonance_percent", 0, 55, 0, "filter bite"), _target(p+"body", "drive_db", 0, 16, 0, "effect bite")]
-    filter_targets = [_target(p+"synth", "filter_frequency_hz", 180, 12000, 12000, "synthesis cutoff", inverse=True), _target(p+"body", "dry_wet_percent", 25, 75, 25, "post-filter body")]
-    env_targets = [_target(p+"synth", "filter_envelope_percent", -20, 80, 0, "filter envelope"), _target(p+"synth", "filter_decay_ms", 120, 5200, 500, "envelope time")]
-    motion_targets = [_target(p+"synth", "lfo_amount_percent", 0, 28, 0, "synthesis motion"), _target(p+"synth", "lfo_rate_hz", 0.05, 5.0, 0.05, "motion rate")]
-    morph_targets = [_target(p+"synth", "filter_frequency_hz", 300, 9000, 9000, "synthesis tone", inverse=True), _target(space_path, "dry_wet_percent", 0, 42 if pad else 18 if hazy else 72, 0, "downstream effect morph")]
-    width_targets = [_target(p+"synth", "spread_percent", 0, 48 if pad else 12, 0, "oscillator spread"), _target(p+"output", "width_percent", 80, 135 if pad else 105, 100, "output width")]
-    attack_targets = [_target(p+"synth", "oscillator_a_attack_ms", 0, 2400 if pad else 80, 0, "carrier attack")]
-    release_targets = [_target(p+"synth", "oscillator_a_release_ms", 80, 7500 if pad else 1400, 260, "carrier release")]
-    tension_targets = [_target(p+"synth", "oscillator_d_level_db", -60, -18, -60, "upper operator tension"), _target(p+"body", "drive_db", 0, 9, 0, "downstream tension")]
-    tail_targets = [_target(space_path, "decay_seconds", 0.3, 8.0, 1.5, "reverb tail") if pad else _target(space_path, "dry_wet_percent", 0, 35 if hazy else 75, 0, "effect tail")]
+    by_id = {device["id"]: device for device in devices}
+    synth_initial = by_id["synth"]["settings"]
+    body_initial = by_id["body"]["settings"]
+    output_initial = by_id["output"]["settings"]
+    body_targets = [
+        _target(p+"synth", "oscillator_a_level_db", synth_initial["oscillator_a_level_db"], 0, synth_initial["oscillator_a_level_db"], "carrier body"),
+        _target(p+"synth", "oscillator_a_sustain_percent", synth_initial["oscillator_a_sustain_percent"], 100, synth_initial["oscillator_a_sustain_percent"], "carrier sustain"),
+    ]
+    fm_targets = [
+        _target(p+"synth", "oscillator_b_level_db", synth_initial["oscillator_b_level_db"], -4, synth_initial["oscillator_b_level_db"], "FM depth"),
+        _target(p+"synth", "oscillator_b_fine", synth_initial["oscillator_b_fine"], min(999, synth_initial["oscillator_b_fine"] + 200), synth_initial["oscillator_b_fine"], "FM ratio color"),
+    ]
+    bite_targets = [
+        _target(p+"synth", "filter_resonance_percent", synth_initial["filter_resonance_percent"], 55, synth_initial["filter_resonance_percent"], "filter bite"),
+        _target(p+"synth", "filter_drive_db", synth_initial["filter_drive_db"], 12, synth_initial["filter_drive_db"], "filter drive"),
+    ]
+    filter_targets = [
+        _target(p+"synth", "filter_frequency_hz", synth_initial["filter_frequency_hz"], 12000, synth_initial["filter_frequency_hz"], "synthesis cutoff"),
+        _target(p+"synth", "filter_key_tracking_percent", synth_initial["filter_key_tracking_percent"], 100, synth_initial["filter_key_tracking_percent"], "filter tracking"),
+    ]
+    env_targets = [
+        _target(p+"synth", "filter_envelope_percent", synth_initial["filter_envelope_percent"], 80, synth_initial["filter_envelope_percent"], "filter envelope"),
+        _target(p+"synth", "filter_decay_ms", synth_initial["filter_decay_ms"], 5200, synth_initial["filter_decay_ms"], "envelope time"),
+    ]
+    motion_targets = [
+        _target(p+"synth", "lfo_amount_percent", synth_initial["lfo_amount_percent"], 28, synth_initial["lfo_amount_percent"], "synthesis motion"),
+        _target(p+"synth", "lfo_rate_hz", synth_initial["lfo_rate_hz"], 5.0, synth_initial["lfo_rate_hz"], "motion rate"),
+    ]
+    width_targets = [
+        _target(p+"synth", "spread_percent", synth_initial["spread_percent"], 60 if pad else 12, synth_initial["spread_percent"], "oscillator spread"),
+        _target(p+"output", "width_percent", output_initial["width_percent"], 140 if pad else 110, output_initial["width_percent"], "output width"),
+    ]
+    attack_targets = [_target(p+"synth", "oscillator_a_attack_ms", synth_initial["oscillator_a_attack_ms"], 2400 if pad else 80, synth_initial["oscillator_a_attack_ms"], "carrier attack")]
+    release_targets = [_target(p+"synth", "oscillator_a_release_ms", synth_initial["oscillator_a_release_ms"], 7500 if pad else 1400, synth_initial["oscillator_a_release_ms"], "carrier release")]
+    velocity_targets = [
+        _target(p+"synth", "velocity_to_volume_percent", synth_initial["velocity_to_volume_percent"], 72, synth_initial["velocity_to_volume_percent"], "velocity response"),
+        _target(p+"synth", "filter_velocity_percent", synth_initial["filter_velocity_percent"], 80, synth_initial["filter_velocity_percent"], "velocity filter response"),
+    ]
     if pad:
+        space_initial = by_id["space"]["settings"]
         macro_specs = [
-            ("COLOR", body_targets), ("FM", fm_targets),
-            ("HARMONICS", [_target(p+"synth", "oscillator_c_level_db", -60, -8, -60, "upper harmonics")]),
+            ("COLOR", bite_targets), ("FM", fm_targets),
+            ("HARMONICS", [
+                _target(p+"synth", "oscillator_c_level_db", synth_initial["oscillator_c_level_db"], -8, synth_initial["oscillator_c_level_db"], "upper harmonics"),
+                _target(p+"synth", "oscillator_c_coarse", synth_initial["oscillator_c_coarse"], 8, synth_initial["oscillator_c_coarse"], "harmonic ratio"),
+            ]),
             ("FILTER", filter_targets), ("ATTACK", attack_targets), ("RELEASE", release_targets),
-            ("DRIFT", motion_targets), ("MOTION", env_targets), ("AGE", bite_targets),
-            ("BLOOM", tail_targets), ("WIDTH", width_targets), ("MORPH", morph_targets),
-            ("VELOCITY", [_target(p+"synth", "velocity_to_volume_percent", 0, 72, 0, "velocity response")]),
-            ("TENSION", tension_targets), ("BODY", body_targets),
-            ("OUT", [_target(p+"output", "gain_db", -12, 6, -5, "final trim")]),
+            ("DRIFT", motion_targets), ("MOTION", env_targets),
+            ("AGE", [
+                _target(p+"body", "drive_db", body_initial["drive_db"], 16, body_initial["drive_db"], "downstream age"),
+                _target(p+"body", "dry_wet_percent", body_initial["dry_wet_percent"], 90, body_initial["dry_wet_percent"], "age blend"),
+            ]),
+            ("BLOOM", [
+                _target(p+"space", "decay_seconds", space_initial["decay_seconds"], 8.0, space_initial["decay_seconds"], "reverb tail"),
+                _target(p+"space", "dry_wet_percent", space_initial["dry_wet_percent"], 48, space_initial["dry_wet_percent"], "reverb blend"),
+            ]),
+            ("WIDTH", width_targets),
+            ("MORPH", [
+                _target(p+"synth", "oscillator_d_level_db", synth_initial["oscillator_d_level_db"], -18, synth_initial["oscillator_d_level_db"], "upper operator morph"),
+                _target(p+"space", "size_percent", space_initial["size_percent"], 100, space_initial["size_percent"], "downstream space morph"),
+            ]),
+            ("VELOCITY", velocity_targets),
+            ("TENSION", [
+                _target(p+"synth", "oscillator_d_fine", synth_initial["oscillator_d_fine"], min(999, synth_initial["oscillator_d_fine"] + 500), synth_initial["oscillator_d_fine"], "fine-ratio tension"),
+                _target(p+"synth", "oscillator_d_coarse", synth_initial["oscillator_d_coarse"], 12, synth_initial["oscillator_d_coarse"], "coarse-ratio tension"),
+            ]),
+            ("BODY", body_targets),
+            ("OUT", [_target(p+"output", "gain_db", output_initial["gain_db"] - 9, output_initial["gain_db"] + 9, output_initial["gain_db"], "final trim")]),
         ]
     else:
+        space_targets = (
+            [_target(p+"shadow", "dry_wet_percent", by_id["shadow"]["settings"]["dry_wet_percent"], 35, by_id["shadow"]["settings"]["dry_wet_percent"], "echo space")]
+            if hazy
+            else [_target(p+"synth", "oscillator_d_release_ms", synth_initial["oscillator_d_release_ms"], 4000, synth_initial["oscillator_d_release_ms"], "upper-partial space")]
+        )
         macro_specs = [
             ("BODY", body_targets), ("FM", fm_targets),
-            ("SUB", [_target(p+"synth", "oscillator_c_level_db", -60, -8, -60, "sub oscillator")]),
+            ("SUB", [_target(p+"synth", "oscillator_c_level_db", synth_initial["oscillator_c_level_db"], -8, synth_initial["oscillator_c_level_db"], "sub oscillator")]),
             ("BITE", bite_targets), ("FILTER", filter_targets), ("ENV", env_targets),
-            ("GLIDE", [_target(p+"synth", "glide_ms", 0, 640, 0, "portamento")]),
-            ("MOTION", motion_targets), ("DIRT", tension_targets), ("SPACE", tail_targets),
+            ("GLIDE", [_target(p+"synth", "glide_ms", synth_initial["glide_ms"], 640, synth_initial["glide_ms"], "portamento")]),
+            ("MOTION", motion_targets),
+            ("DIRT", [_target(p+"body", "drive_db", body_initial["drive_db"], 16, body_initial["drive_db"], "downstream dirt")]),
+            ("SPACE", space_targets),
             ("WIDTH_HI", width_targets), ("ATTACK", attack_targets), ("RELEASE", release_targets),
-            ("VELOCITY", [_target(p+"synth", "velocity_to_volume_percent", 0, 72, 0, "velocity response")]),
-            ("MORPH", morph_targets),
-            ("OUT", [_target(p+"output", "gain_db", -12, 6, -5, "final trim")]),
+            ("VELOCITY", velocity_targets),
+            ("MORPH", [
+                _target(p+"synth", "oscillator_d_level_db", synth_initial["oscillator_d_level_db"], -18, synth_initial["oscillator_d_level_db"], "synthesis morph"),
+                _target(p+"body", "dry_wet_percent", body_initial["dry_wet_percent"], 90, body_initial["dry_wet_percent"], "downstream effect morph"),
+            ]),
+            ("OUT", [_target(p+"output", "gain_db", output_initial["gain_db"] - 9, output_initial["gain_db"] + 9, output_initial["gain_db"], "final trim")]),
         ]
     macros = [_macro(i, name, targets, recipe.style, output=name == "OUT") for i, (name, targets) in enumerate(macro_specs, 1)]
     return _base_blueprint(recipe, family, "operator_instrument_rack", [_chain(chain_id, "Operator Voice", "midi_to_audio_instrument", devices)], macros, intended_sources=["played_midi", "sequenced_midi", "velocity_sensitive_notes"], dry_mode="not_applicable")
@@ -506,17 +627,20 @@ def _midi_mutator(recipe: RackBlueprintRecipe) -> dict[str, Any]:
         ("ROOT", [_target(p+"scale", "transpose_semitones", -12, 12, 0, "root displacement")]),
         ("CHORD", [_target(p+"chord", "shift_1_velocity_percent", 0, 100, 0, "first chord tone"), _target(p+"chord", "shift_2_velocity_percent", 0, 100, 0, "second chord tone")]),
         ("STRUM", [_target(p+"chord", "strum_ms", 0, 180, 0, "bounded chord spread")]),
-        ("RATE", [_target(p+"arpeggiator", "rate_sixteenths", 1, 8, 4, "arpeggio rate")]),
-        ("GATE", [_target(p+"arpeggiator", "gate_percent", 20, 130, 100, "arpeggio gate"), _target(p+"note_length", "gate_percent", 20, 130, 100, "final note gate")]),
+        ("RATE", [_target(p+"arpeggiator", "rate_sixteenths", 2 if hazy else 4, 8, 2 if hazy else 4, "arpeggio rate")]),
+        ("GATE", [_target(p+"arpeggiator", "gate_percent", 74, 130, 74, "arpeggio gate"), _target(p+"note_length", "gate_percent", 84, 130, 84, "final note gate")]),
         ("MUTATE", [_target(p+"random", "chance_percent", 0, 38, 0, "bounded pitch mutation"), _target(p+"random", "choices", 1, 7, 1, "mutation choices")]),
         ("INTERVAL", [_target(p+"random", "interval_semitones", 1, 7, 1, "mutation interval")]),
-        ("LENGTH", [_target(p+"note_length", "length_sixteenths", 1, 8, 4, "note duration")]),
-        ("VELOCITY", [_target(p+"velocity", "out_low", 24, 72, 48, "velocity floor"), _target(p+"velocity", "out_high", 82, 118, 108, "velocity ceiling")]),
-        ("DYNAMICS", [_target(p+"velocity", "random_amount", 0, 28, 0, "bounded velocity deviation"), _target(p+"chord", "crescendo_percent", -35, 35, 0, "chord dynamics")]),
-        ("TIMING", [_target(p+"chord", "strum_ms", 0, 90, 0, "role-aware timing"), _target(p+"arpeggiator", "gate_percent", 55, 110, 100, "timing articulation")]),
-        ("RANGE", [_target(p+"scale", "lowest_note", 24, 60, 24, "lowest output note"), _target(p+"scale", "range_semitones", 24, 84, 72, "allowed note span")]),
+        ("LENGTH", [_target(p+"note_length", "length_sixteenths", 1, 8, 1, "note duration")]),
+        ("VELOCITY", [_target(p+"velocity", "out_low", (18 if hazy else 28), (58 if hazy else 68), (38 if hazy else 48), "velocity floor"), _target(p+"velocity", "out_high", 98, 118, 108, "velocity ceiling")]),
+        ("DYNAMICS", [_target(p+"velocity", "random_amount", 0, 28, 0, "bounded velocity deviation")]),
+        ("TIMING", [_target(p+"note_length", "release_decay_ms", 0, 500, 0, "role-aware release timing")]),
+        ("RANGE", [_target(p+"scale", "lowest_note", 12, 36, 24, "lowest output note"), _target(p+"scale", "range_semitones", 60, 84, 72, "allowed note span")]),
     ]
-    macros = [_macro(i, name, targets, recipe.style) for i, (name, targets) in enumerate(macro_specs, 1)]
+    macros = [
+        _macro(i, name, targets, recipe.style, bipolar=name in {"ROOT", "VELOCITY", "RANGE"})
+        for i, (name, targets) in enumerate(macro_specs, 1)
+    ]
     return _base_blueprint(recipe, "MIDI_PATTERN_MUTATOR", "midi_effect_rack", [_chain(chain_id, "MIDI Transform", "midi_processing", devices)], macros, intended_sources=["single_notes", "held_chords", "short_midi_phrases"], dry_mode="not_applicable")
 
 
