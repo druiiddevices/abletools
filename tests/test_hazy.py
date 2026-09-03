@@ -38,6 +38,7 @@ class HazyGeneratorTests(unittest.TestCase):
                 )
                 self.assertNotEqual(variations["A"].notes, variations["B"].notes)
                 self.assertNotEqual(variations["A"].notes, variations["C"].notes)
+                self.assertNotEqual(variations["B"].notes, variations["C"].notes)
         motif = by_role["motif"]
         arpeggio = by_role["arpeggio"]
         self.assertEqual(
@@ -162,6 +163,85 @@ class HazyGeneratorTests(unittest.TestCase):
                 self.assertNotEqual(low_by_role[target_role], high_by_role[target_role])
                 for role in low_by_role.keys() - {target_role}:
                     self.assertEqual(low_by_role[role], high_by_role[role])
+
+    def test_zero_role_mutation_collapses_every_role_to_identical_abc_notes(self) -> None:
+        recipe = HazyMidiRecipe(
+            seed=1842,
+            chord_mutation=0.0,
+            bass_mutation=0.0,
+            motif_mutation=0.0,
+            arpeggio_mutation=0.0,
+            drum_mutation=0.0,
+        )
+        by_role = {}
+        for asset in generate_hazy_midi_essentials(recipe):
+            by_role.setdefault(asset.role, {})[asset.variation] = asset.notes
+        self.assertEqual(
+            set(by_role), {"chords", "bass", "motif", "arpeggio", "drum_pattern"}
+        )
+        for role, variations in by_role.items():
+            with self.subTest(role=role):
+                self.assertEqual(variations["A"], variations["B"])
+                self.assertEqual(variations["A"], variations["C"])
+
+    def test_zero_groove_drift_keeps_motif_and_arpeggio_on_their_grids(self) -> None:
+        assets = generate_hazy_midi_essentials(
+            HazyMidiRecipe(
+                seed=1842,
+                groove_drift=0,
+                motif_mutation=1.0,
+                arpeggio_mutation=1.0,
+            )
+        )
+        for asset in assets:
+            if asset.role == "motif":
+                with self.subTest(role=asset.role, variation=asset.variation):
+                    self.assertTrue(all(note.start % PPQ == 0 for note in asset.notes))
+            elif asset.role == "arpeggio":
+                with self.subTest(role=asset.role, variation=asset.variation):
+                    self.assertTrue(all(note.start % (PPQ // 2) == 0 for note in asset.notes))
+
+    def test_zero_color_and_ambiguity_disable_their_chord_treatments(self) -> None:
+        colorless = [
+            asset
+            for asset in generate_hazy_midi_essentials(
+                HazyMidiRecipe(seed=1842, color_amount=0.0, chord_mutation=1.0)
+            )
+            if asset.role == "chords"
+        ]
+        self.assertFalse(
+            {"add2", "add6", "7"}
+            & {color for asset in colorless for color in asset.metadata["color_behavior"]}
+        )
+
+        unambiguous = [
+            asset
+            for asset in generate_hazy_midi_essentials(
+                HazyMidiRecipe(seed=1842, ambiguity=0.0, chord_mutation=1.0)
+            )
+            if asset.role == "chords"
+        ]
+        self.assertFalse(
+            {"sus2", "sus4", "open5"}
+            & {color for asset in unambiguous for color in asset.metadata["color_behavior"]}
+        )
+
+        neutral = [
+            asset
+            for asset in generate_hazy_midi_essentials(
+                HazyMidiRecipe(
+                    seed=1842,
+                    color_amount=0.0,
+                    ambiguity=0.0,
+                    chord_mutation=1.0,
+                )
+            )
+            if asset.role == "chords"
+        ]
+        self.assertEqual(
+            {color for asset in neutral for color in asset.metadata["color_behavior"]},
+            {"triad"},
+        )
 
     def test_pitch_duration_timing_velocity_and_drum_contracts_are_practical(self) -> None:
         clip_ticks = self.recipe.bars * BEATS_PER_BAR * PPQ

@@ -107,13 +107,28 @@ def _harmony_plan(
             color = "sus2"
             pcs = (root_pc, _degree_pc(recipe, degree + 1), fifth_pc)
 
-        if variation == "B" and mutation > 0 and index % 4 == 2:
+        if (
+            variation == "B"
+            and mutation > 0
+            and recipe.color_amount > 0
+            and index % 4 == 2
+        ):
             color = "7"
             pcs = (root_pc, third_pc, fifth_pc, _degree_pc(recipe, degree + 6))
-        elif variation == "C" and mutation > 0 and index % 4 == 1:
+        elif (
+            variation == "C"
+            and mutation > 0
+            and recipe.ambiguity >= 0.45
+            and index % 4 == 1
+        ):
             color = "open5"
             pcs = (root_pc, fifth_pc)
-        elif variation == "C" and mutation > 0 and index % 4 == 3:
+        elif (
+            variation == "C"
+            and mutation > 0
+            and recipe.ambiguity >= 0.45
+            and index % 4 == 3
+        ):
             color = "sus4"
             pcs = (root_pc, _degree_pc(recipe, degree + 3), fifth_pc)
 
@@ -249,7 +264,7 @@ def generate_hazy_chords(recipe: HazyMidiRecipe, variation: str) -> GeneratedHaz
         for index in range(len(plan))
         if recipe.pedal_preference >= 0.5 and index % 4 != 1
     ]
-    target_center = 64 + {"A": 0, "B": 3, "C": -2}[variation]
+    target_center = 64 + ({"A": 0, "B": 3, "C": -2}[variation] if mutation > 0 else 0)
     voicings: list[tuple[int, ...]] = []
     previous: tuple[int, ...] | None = None
     for index, (pitch_classes, _symbol, _color) in enumerate(plan):
@@ -275,7 +290,7 @@ def generate_hazy_chords(recipe: HazyMidiRecipe, variation: str) -> GeneratedHaz
             notes.append(MidiNote(chord_start + strum, duration, pitch, velocity))
 
     tension_event: dict[str, Any] | None = None
-    if variation == "C" and recipe.tension >= 0.25:
+    if variation == "C" and mutation > 0 and recipe.tension >= 0.25:
         chord_index = min(1, len(voicings) - 1)
         chromatic_pc = _chromatic_approach_pc(
             recipe, _degree_pc(recipe, recipe.progression[chord_index])
@@ -417,6 +432,7 @@ def generate_hazy_motif(recipe: HazyMidiRecipe, variation: str) -> GeneratedHazy
     bar_ticks = BEATS_PER_BAR * PPQ
     notes: list[MidiNote] = []
     destabilizing_event: dict[str, Any] | None = None
+    drift_limit = round(recipe.groove_drift * mutation)
     for bar in range(recipe.bars):
         cell = base_cell.copy()
         if variation == "B" and mutation > 0 and bar % 2 == 1:
@@ -435,9 +451,8 @@ def generate_hazy_motif(recipe: HazyMidiRecipe, variation: str) -> GeneratedHazy
             if bar == recipe.bars - 1 and step == len(cell) - 1:
                 pitch = _nearest_pitch(_root_pc(recipe), low, high, 72)
             drift = 0
-            if variation != "A" and mutation > 0 and step in (1, 2):
-                limit = max(1, round(recipe.groove_drift * mutation))
-                drift = (1 if step == 1 else -1) * rng.randint(1, limit)
+            if variation != "A" and mutation > 0 and drift_limit > 0 and step in (1, 2):
+                drift = (1 if step == 1 else -1) * rng.randint(1, drift_limit)
             start = bar * bar_ticks + step * PPQ + drift
             notes.append(MidiNote(start, 3 * PPQ // 5, pitch, 78 if step == 0 else 66 + step * 2))
 
@@ -483,6 +498,7 @@ def generate_hazy_arpeggio(recipe: HazyMidiRecipe, variation: str) -> GeneratedH
     notes: list[MidiNote] = []
     rest_steps: list[int] = []
     octave_steps: list[int] = []
+    drift_limit = round(recipe.groove_drift * mutation)
     for bar in range(recipe.bars):
         degree = recipe.progression[bar % len(recipe.progression)]
         chord_pitches = [
@@ -502,9 +518,8 @@ def generate_hazy_arpeggio(recipe: HazyMidiRecipe, variation: str) -> GeneratedH
                 pitch = shifted
                 octave_steps.append(bar * 8 + step)
             drift = 0
-            if variation != "A" and step % 2 == 1:
-                limit = max(1, round(recipe.groove_drift * mutation))
-                drift = rng.randint(0, limit)
+            if variation != "A" and mutation > 0 and drift_limit > 0 and step % 2 == 1:
+                drift = rng.randint(0, drift_limit)
             notes.append(
                 MidiNote(
                     bar * bar_ticks + step * PPQ // 2 + drift,
