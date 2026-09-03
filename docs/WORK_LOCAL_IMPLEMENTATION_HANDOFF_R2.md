@@ -21,6 +21,7 @@ Keep rack design separate from native rack serialization:
 - A structured rack-blueprint contract, validator, and original sound-design catalog may be implemented before native export.
 - Native `.adg`/`.adv` serialization remains disabled until fixture-based round-trip tests in Ableton Live pass.
 - Never label a JSON or Markdown blueprint as a finished Ableton rack.
+- Every sound-design rack family must have at least eight extensive, useful, premapped macros with documented multi-parameter targets, safe ranges, and Macro Variations. Use twelve to sixteen only when each added macro remains distinct and performance-worthy.
 
 The planned order is now:
 
