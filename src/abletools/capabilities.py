@@ -42,9 +42,8 @@ CAPABILITIES: dict[str, Capability] = {
     ),
     "hazy_midi_essentials": Capability(
         "hazy_midi_essentials",
-        "gated",
-        "Generate the HAZY MIDI Essentials pack.",
-        "Scheduled for a separate profile-backed milestone.",
+        "enabled",
+        "Generate the standards-compliant HAZY MIDI Essentials pack.",
     ),
     "serum2_preset": Capability(
         "serum2_preset",

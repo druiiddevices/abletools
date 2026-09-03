@@ -1,7 +1,7 @@
 import unittest
 
 from abletools.capabilities import get_capability, require_capability
-from abletools.recipe import MidiEssentialsRecipe, route_profile
+from abletools.recipe import HazyMidiRecipe, MidiEssentialsRecipe, route_profile
 
 
 class CapabilityTests(unittest.TestCase):
@@ -9,6 +9,7 @@ class CapabilityTests(unittest.TestCase):
         self.assertTrue(require_capability("standard_midi").enabled)
         self.assertTrue(require_capability("zip_pack").enabled)
         self.assertTrue(require_capability("druiid_midi_essentials").enabled)
+        self.assertTrue(require_capability("hazy_midi_essentials").enabled)
 
     def test_native_exporters_remain_gated(self) -> None:
         for name in ("serum2_preset", "ableton_rack", "ableton_groove", "max_for_live"):
@@ -17,9 +18,9 @@ class CapabilityTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "fixture-based round-trip tests"):
                     require_capability(name)
 
-    def test_hazy_profile_fails_closed_for_this_milestone(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "separate profile-backed milestone"):
-            route_profile("HAZY")
+    def test_hazy_profile_routes_to_its_separate_implemented_profile(self) -> None:
+        self.assertEqual(route_profile("HAZY"), "HAZY_R1")
+        self.assertEqual(HazyMidiRecipe(seed=1842).profile_version, "HAZY_R1")
 
     def test_recipe_is_canonical_and_role_controls_are_isolated(self) -> None:
         first = MidiEssentialsRecipe(seed=1842, upper_mutation=0.25, bass_mutation=0.75)

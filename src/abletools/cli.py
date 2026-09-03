@@ -9,8 +9,8 @@ from pathlib import Path
 from .audio import validate_wav
 from .manifest import load_manifest
 from .midi import validate_midi
-from .pack import build_demo_pack, build_druiid_midi_pack, validate_pack, validate_zip
-from .recipe import ROOTS, SCALES, MidiEssentialsRecipe
+from .pack import build_demo_pack, build_druiid_midi_pack, build_hazy_midi_pack, validate_pack, validate_zip
+from .recipe import HAZY_ARCHETYPES, HAZY_MODES, ROOTS, SCALES, HazyMidiRecipe, MidiEssentialsRecipe
 
 
 def _validate(path: Path) -> dict[str, object]:
@@ -47,6 +47,26 @@ def build_parser() -> argparse.ArgumentParser:
     druiid.add_argument("--motif-mutation", type=float, default=0.5)
     druiid.add_argument("--rhythm-mutation", type=float, default=0.5)
     druiid.add_argument("--humanize-ticks", type=int, default=4)
+    hazy = subparsers.add_parser("hazy-midi", help="build a deterministic HAZY MIDI Essentials pack")
+    hazy.add_argument("--output", type=Path, required=True)
+    hazy.add_argument("--seed", type=int, default=1842)
+    hazy.add_argument("--root", choices=ROOTS, default="D")
+    hazy.add_argument("--mode", choices=tuple(HAZY_MODES), default="dorian")
+    hazy.add_argument("--bpm", type=int, default=92)
+    hazy.add_argument("--bars", type=int, default=8)
+    hazy.add_argument("--harmonic-archetype", choices=tuple(HAZY_ARCHETYPES), default="modal_pedal")
+    hazy.add_argument("--progression", type=int, nargs="+")
+    hazy.add_argument("--color-amount", type=float, default=0.65)
+    hazy.add_argument("--ambiguity", type=float, default=0.6)
+    hazy.add_argument("--tension", type=float, default=0.4)
+    hazy.add_argument("--pedal-preference", type=float, default=0.7)
+    hazy.add_argument("--common-tone-preference", type=float, default=0.75)
+    hazy.add_argument("--groove-drift", type=int, default=6)
+    hazy.add_argument("--chord-mutation", type=float, default=0.55)
+    hazy.add_argument("--bass-mutation", type=float, default=0.45)
+    hazy.add_argument("--motif-mutation", type=float, default=0.5)
+    hazy.add_argument("--arpeggio-mutation", type=float, default=0.55)
+    hazy.add_argument("--drum-mutation", type=float, default=0.5)
     validate = subparsers.add_parser("validate", help="validate an R1 file or pack")
     validate.add_argument("path", type=Path)
     return parser
@@ -73,6 +93,30 @@ def main() -> int:
             humanize_ticks=args.humanize_ticks,
         )
         output = build_druiid_midi_pack(args.output, recipe)
+        print(json.dumps({"status": "ok", "pack": str(output), "archive": str(output.with_suffix('.zip'))}))
+        return 0
+    if args.command == "hazy-midi":
+        recipe = HazyMidiRecipe(
+            seed=args.seed,
+            root=args.root,
+            mode=args.mode,
+            bpm=args.bpm,
+            bars=args.bars,
+            harmonic_archetype=args.harmonic_archetype,
+            progression=tuple(args.progression) if args.progression is not None else None,
+            color_amount=args.color_amount,
+            ambiguity=args.ambiguity,
+            tension=args.tension,
+            pedal_preference=args.pedal_preference,
+            common_tone_preference=args.common_tone_preference,
+            groove_drift=args.groove_drift,
+            chord_mutation=args.chord_mutation,
+            bass_mutation=args.bass_mutation,
+            motif_mutation=args.motif_mutation,
+            arpeggio_mutation=args.arpeggio_mutation,
+            drum_mutation=args.drum_mutation,
+        )
+        output = build_hazy_midi_pack(args.output, recipe)
         print(json.dumps({"status": "ok", "pack": str(output), "archive": str(output.with_suffix('.zip'))}))
         return 0
     result = _validate(args.path)
