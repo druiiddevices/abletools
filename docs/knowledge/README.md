@@ -8,5 +8,6 @@ These files are the canonical asset and style references shared by the Abletools
 | `DRUIID` | Asset standards + `KNOWLEDGE_DRUIID_STYLE_R1.md` |
 | `HAZY` | Asset standards + `KNOWLEDGE_BOC_STYLE_R1.md` |
 | Explicit hybrid | Asset standards + both style profiles |
+| Audio Effect Rack or sound-design tool | Asset standards + requested style profile + `KNOWLEDGE_ABLETON_FX_RACKS_R1.md` |
 
 Behavioral instructions belong in the GPT configuration or `AGENTS.md`, not in these reference files. Keep the copies uploaded to the GPT synchronized with this directory.
