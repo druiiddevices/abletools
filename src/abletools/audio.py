@@ -6,6 +6,7 @@ import math
 import wave
 from pathlib import Path
 
+from .capabilities import require_capability
 from .seed import seeded_rng
 
 
@@ -25,6 +26,7 @@ def write_kick_wav(
     sample_rate: int = 48_000,
 ) -> Path:
     """Render a compact mono kick as 24-bit PCM WAV."""
+    require_capability("pcm_wav")
     if not 0.1 <= duration <= 4.0:
         raise ValueError("duration must be between 0.1 and 4.0 seconds")
     if sample_rate < 8_000:
@@ -61,6 +63,7 @@ def write_kick_wav(
 
 def validate_wav(path: str | Path) -> dict[str, int | float]:
     """Validate PCM WAV format and calculate sample peak."""
+    require_capability("pcm_wav")
     with wave.open(str(path), "rb") as wav:
         if wav.getcomptype() != "NONE":
             raise ValueError("WAV must use uncompressed PCM")

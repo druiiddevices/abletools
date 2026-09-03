@@ -5,13 +5,15 @@ Abletools is the deterministic asset engine and catalog behind the **Abletools G
 - `DRUIID`: seed-recallable, scale-aware systems with controlled mutation.
 - `HAZY`: original hazy-analog material using broad aesthetic traits without copying any artist's work.
 
-## R1 capability boundary
+## Capability boundary
 
-| Asset | R1 status |
+| Asset | Status |
 |---|---|
-| Standard MIDI files | Generated and validated |
+| Standard MIDI files | Generated and strictly validated |
+| DRUIID MIDI Essentials | Enabled: chord, bass, motif, and drum A/B/C clips |
+| HAZY MIDI Essentials | Gated for its separate profile-backed milestone |
 | 48 kHz / 24-bit PCM WAV | Generated and validated |
-| ZIP packs + manifests | Generated and validated |
+| ZIP packs + manifests | Deterministically generated and validated |
 | Serum 2 presets | Gated pending licensed fixture/export harness |
 | Ableton racks/grooves/devices | Gated pending native fixture/export harness |
 
@@ -25,10 +27,15 @@ Requires Python 3.11+ and no runtime dependencies.
 python -m pip install -e .
 abletools demo --output build/demo --seed 1842
 abletools validate build/demo
+abletools druiid-midi --output build/druiid-midi --seed 1842 --root A --scale minor
+abletools validate build/druiid-midi
+abletools validate build/druiid-midi.zip
 python -m unittest discover -s tests
 ```
 
 The demo creates a deterministic chord MIDI file, a synthesized kick WAV, `manifest.json`, and a ZIP pack.
+The DRUIID command creates twelve MIDI clips: A/B/C forms for chords, bass, motif, and drums.
+Every pack includes a README, complete metadata and validation records, and a deterministic validated ZIP.
 
 ## Repository map
 
@@ -45,4 +52,7 @@ See [docs/architecture.md](docs/architecture.md) before adding an exporter or up
 
 ## Current phase
 
-R1 establishes trustworthy MIDI/WAV generation and a manifest contract. The next phase adds an authenticated GPT Action service and repository publication workflow. Native Serum 2 and Ableton formats remain disabled until real user-exported fixtures pass round-trip tests.
+R2 adds a standards-compliant DRUIID MIDI Essentials vertical slice, strict manifest and MIDI checks,
+an explicit runtime capability registry, and safe deterministic ZIP validation. DRUIID remains a
+provisional musical-behavior profile rather than a claimed sonic genre. HAZY generation, publication,
+and all native Serum 2 and Ableton formats remain gated for their separate milestones.
