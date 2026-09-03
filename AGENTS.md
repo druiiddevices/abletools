@@ -15,6 +15,18 @@ Build original, useful Ableton Live assets and the infrastructure that validates
 - Keep generated binaries out of ordinary Git history unless they are approved release assets and covered by Git LFS.
 - Every released pack needs a valid `manifest.json` and validation record.
 
+## Required knowledge routing
+
+Before designing, generating, reviewing, or approving an asset, read:
+
+1. `docs/knowledge/KNOWLEDGE_ABLETON_ASSET_STANDARDS_R1.md`
+2. The requested style profile:
+   - `docs/knowledge/KNOWLEDGE_DRUIID_STYLE_R1.md` for `DRUIID`
+   - `docs/knowledge/KNOWLEDGE_BOC_STYLE_R1.md` for `HAZY`
+   - both style files only for an explicitly requested hybrid
+
+The knowledge files define asset/style intent. This `AGENTS.md` defines repository execution rules. Do not silently invent new Druiid traits or change a style profile from a single output; keep observations separate until the user approves them.
+
 ## Verification
 
 Run before committing:
