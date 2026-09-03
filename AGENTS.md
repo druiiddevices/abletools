@@ -24,8 +24,10 @@ Before designing, generating, reviewing, or approving an asset, read:
    - `docs/knowledge/KNOWLEDGE_DRUIID_STYLE_R1.md` for `DRUIID`
    - `docs/knowledge/KNOWLEDGE_BOC_STYLE_R1.md` for `HAZY`
    - both style files only for an explicitly requested hybrid
+3. For Audio Effect Racks or sound-design tools, also read
+   `docs/knowledge/KNOWLEDGE_ABLETON_FX_RACKS_R1.md`.
 
-The knowledge files define asset/style intent. This `AGENTS.md` defines repository execution rules. Do not silently invent new Druiid traits or change a style profile from a single output; keep observations separate until the user approves them.
+The knowledge files define asset/style intent. This `AGENTS.md` defines repository execution rules. Do not silently invent new Druiid traits or change a style profile from a single output; keep observations separate until the user approves them. Rack blueprints and native `.adg` export are separate capabilities: blueprint work may proceed before native export, but a blueprint must never be presented as a finished rack.
 
 ## Verification
 
