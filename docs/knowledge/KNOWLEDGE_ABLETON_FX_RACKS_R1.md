@@ -1,0 +1,95 @@
+# Ableton sound-design FX racks R1
+
+## Purpose
+
+Treat Audio Effect Racks as a first-class Abletools asset lane. These racks are creative sound-design tools for transforming synths, drums, samples, atmospheres, Foley, and full musical parts inside Ableton Live. They are not limited to corrective mixing or mastering.
+
+Design original tools that are playable, fast to understand, and safe at useful settings. Prefer stock Ableton Live 12 devices unless the user requests and owns a third-party dependency.
+
+## Blueprint versus native rack
+
+Keep two capabilities separate:
+
+1. A **rack blueprint** is a structured development specification describing topology, devices, mappings, ranges, variations, gain staging, and tests. It can be generated and validated without serializing an Ableton file.
+2. A **native rack** is a real `.adg` that has opened successfully in the target Live version and passed mapping, dependency, signal-flow, and audio safety checks.
+
+Blueprint work may be implemented early. Native `.adg` export remains gated until fixture-based round-trip testing exists. A JSON or Markdown blueprint is never a finished rack and is not a user-facing substitute unless the user explicitly accepts a manual build sheet.
+
+## Rack design contract
+
+Every blueprint should declare:
+
+- rack name, role, style, version, and intended source material
+- minimum Ableton Live version and all dependencies
+- serial and parallel chain topology in left-to-right signal-flow order
+- every device, important parameter value, and chain level/pan setting
+- a dry/pass-through strategy and the behavior at the neutral default
+- macro name, default, minimum, maximum, polarity, curve, and all mapped targets
+- whether each macro is excluded from randomization or Macro Variations
+- named Macro Variations with a musical purpose
+- input-level assumptions, output trim, gain-staging notes, latency, and tail behavior
+- mono, stereo, low-frequency, clipping, bypass, and automation safety notes
+- test signals and validation results; never invent a passed check
+
+Live 12 supports up to 16 Macro Controls, but four to eight focused controls are the default. Use more only when the rack remains legible. One macro may control several parameters, including inverted ranges, when the combined motion has a clear musical purpose.
+
+## Macro and variation rules
+
+- Make the neutral default immediately usable and level-conscious.
+- Give every macro one understandable performance concept rather than exposing engineering clutter.
+- Bound mappings so every edge state is intentional. Avoid dead zones, sudden dangerous level jumps, unstable feedback, and uncontrolled sub energy.
+- Map an output trim when processing can add gain. Do not hide makeup gain inside an unrelated macro.
+- Exclude safety-critical controls such as output level, limiter ceiling, and sub protection from randomization and variations when possible.
+- Prefer three to five variations: `INIT`, `SUBTLE`, `ACTIVE`, `EXTREME_SAFE`, and an optional role-specific state.
+- Variations must remain useful starting points, not novelty snapshots.
+- For DRUIID racks, variations should form a related A/B/C family with bounded change.
+- For HAZY racks, degradation should accumulate in layers while at least one dry or intelligible anchor remains.
+
+## Initial sound-design tool families
+
+| Family | Purpose | Suggested macro concepts |
+|---|---|---|
+| `AGE_MACHINE` | Controlled bandwidth loss, saturation, drift, dust, and worn-media color | AGE, DRIFT, DUST, FOCUS, WOW, BLOOM, WIDTH, OUT |
+| `MEMORY_BLOOM` | Diffuse delay/reverb memory that can swell around a dry anchor | BLOOM, ECHO, SMEAR, TAIL, DUCK, TONE, WIDTH, OUT |
+| `RHYTHM_FRACTURE` | Tempo-aware gating, repeats, stutters, and rhythmic rearrangement | RATE, GATE, REPEAT, OFFSET, MUTATE, TONE, MIX, OUT |
+| `TRANSIENT_MUTATOR` | Reshape attack, body, crack, decay, dirt, and room character | ATTACK, BODY, CRACK, DECAY, DIRT, TONE, MIX, OUT |
+| `RESONANT_PERCOLATOR` | Turn short sounds and Foley into tuned, playable resonant percussion | PITCH, TENSION, STRIKE, DECAY, DAMP, SPREAD, MIX, OUT |
+| `SPECTRAL_SHADOW` | Create filtered doubles, spectral contrast, motion, and shadow layers | FOCUS, SHIFT, SMEAR, SHADOW, MOTION, AIR, MIX, OUT |
+| `FOLEY_ANIMATOR` | Add grain, motion, filtering, pitch life, and space to static recordings | GRAIN, MOTION, DUST, FILTER, PITCH, SPACE, MIX, OUT |
+| `BUILD_ENGINE` | Generate controlled risers, pressure, density, widening, and transition tails | RISE, PRESSURE, PITCH, DENSITY, SPACE, IMPACT, MIX, OUT |
+| `BASS_MUTATOR` | Add weight, controlled growl, movement, and upper-band width without losing the center | WEIGHT, GROWL, MOTION, DIRT, FOCUS, WIDTH_HI, MIX, OUT |
+| `DRUM_MUTATION_BUS` | Turn a loop or kit into related punch, crush, room, dust, and motion states | PUNCH, CRUSH, SMACK, ROOM, DUST, MOTION, MIX, OUT |
+
+The family name is a role, not a fixed recipe. DRUIID and HAZY variants must use their own style profile and should not be produced by relabeling identical mappings.
+
+## Style behavior
+
+### DRUIID
+
+- Keep timbre neutral and production-ready until the user supplies enough Druiid audio evidence.
+- Express identity through deterministic blueprint generation, clear macro relationships, bounded mutation, tempo-aware modulation, and related A/B/C variations.
+- Useful controls include MUTATE, MOTION, TENSION, DENSITY, SPREAD, and an optional AGE dimension.
+- Do not invent an organic, occult, woodland, or dark timbral mythology.
+
+### HAZY
+
+- Favor controlled drift, softened bandwidth, layered saturation, filtered noise, spatial memory, asymmetrical echoes, and restrained spectral wear.
+- Useful controls include AGE, DRIFT, FOCUS, BLOOM, SHADOW, MOTION, DUST, and WIDTH.
+- Preserve clarity, low-end stability, and an intelligible anchor as degradation increases.
+- Create original behavior; do not reproduce a recognizable artist preset or song effect.
+
+## Validation boundary
+
+Blueprint validation can confirm schema completeness, known device identifiers, mapping ranges, topology, dependencies, deterministic output, naming, and test declarations. It cannot prove that a rack opens or sounds correct in Ableton Live.
+
+Native approval requires a real Live fixture or controlled manual test that confirms:
+
+- the `.adg` opens in the declared Live version
+- stock and third-party dependencies resolve exactly as declared
+- devices, chains, and mappings survive save/reopen
+- every macro moves the intended parameters across the declared range
+- Macro Variations recall correctly
+- dry/wet, bypass, automation, mono, stereo, low-end, clipping, tail, and latency behavior is acceptable
+- the rack produces a genuinely useful result on its declared source types
+
+Until those checks exist, keep `native_ableton_rack_export` disabled.
