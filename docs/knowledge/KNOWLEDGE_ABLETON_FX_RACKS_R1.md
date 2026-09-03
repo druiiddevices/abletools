@@ -24,19 +24,33 @@ Every blueprint should declare:
 - serial and parallel chain topology in left-to-right signal-flow order
 - every device, important parameter value, and chain level/pan setting
 - a dry/pass-through strategy and the behavior at the neutral default
-- macro name, default, minimum, maximum, polarity, curve, and all mapped targets
+- macro name, color, info text, default, minimum, maximum, polarity, curve, and all mapped targets
+- each mapping target's full device/chain path, parameter, range, direction, and musical purpose
 - whether each macro is excluded from randomization or Macro Variations
 - named Macro Variations with a musical purpose
 - input-level assumptions, output trim, gain-staging notes, latency, and tail behavior
 - mono, stereo, low-frequency, clipping, bypass, and automation safety notes
 - test signals and validation results; never invent a passed check
 
-Live 12 supports up to 16 Macro Controls, but four to eight focused controls are the default. Use more only when the rack remains legible. One macro may control several parameters, including inverted ranges, when the combined motion has a clear musical purpose.
+Every Abletools sound-design rack must arrive with an extensive, fully premapped performance panel. Eight mapped macros is the minimum; target eight to twelve, and use up to Live 12's maximum of 16 when the additional controls remain distinct and useful. Do not ship empty placeholders, redundant controls, or macros mapped only for appearance. One macro should control several coordinated parameters when that creates a clear musical transformation, including inverted ranges where appropriate.
+
+The macro panel should collectively cover:
+
+- primary character or transformation intensity
+- tonal or spectral focus
+- motion or rhythmic behavior
+- time, decay, or envelope behavior
+- spatial or stereo behavior with low-frequency safety
+- dry/wet or parallel blend
+- explicit output trim
+- at least one role-specific performance control
 
 ## Macro and variation rules
 
 - Make the neutral default immediately usable and level-conscious.
 - Give every macro one understandable performance concept rather than exposing engineering clutter.
+- Favor coordinated multi-parameter mappings that make complex processing playable from the top level.
+- Give each macro concise Info Text that explains what it changes and warns about any extreme behavior.
 - Bound mappings so every edge state is intentional. Avoid dead zones, sudden dangerous level jumps, unstable feedback, and uncontrolled sub energy.
 - Map an output trim when processing can add gain. Do not hide makeup gain inside an unrelated macro.
 - Exclude safety-critical controls such as output level, limiter ceiling, and sub protection from randomization and variations when possible.
@@ -47,7 +61,7 @@ Live 12 supports up to 16 Macro Controls, but four to eight focused controls are
 
 ## Initial sound-design tool families
 
-| Family | Purpose | Suggested macro concepts |
+| Family | Purpose | Required baseline macro concepts |
 |---|---|---|
 | `AGE_MACHINE` | Controlled bandwidth loss, saturation, drift, dust, and worn-media color | AGE, DRIFT, DUST, FOCUS, WOW, BLOOM, WIDTH, OUT |
 | `MEMORY_BLOOM` | Diffuse delay/reverb memory that can swell around a dry anchor | BLOOM, ECHO, SMEAR, TAIL, DUCK, TONE, WIDTH, OUT |
@@ -60,7 +74,7 @@ Live 12 supports up to 16 Macro Controls, but four to eight focused controls are
 | `BASS_MUTATOR` | Add weight, controlled growl, movement, and upper-band width without losing the center | WEIGHT, GROWL, MOTION, DIRT, FOCUS, WIDTH_HI, MIX, OUT |
 | `DRUM_MUTATION_BUS` | Turn a loop or kit into related punch, crush, room, dust, and motion states | PUNCH, CRUSH, SMACK, ROOM, DUST, MOTION, MIX, OUT |
 
-The family name is a role, not a fixed recipe. DRUIID and HAZY variants must use their own style profile and should not be produced by relabeling identical mappings.
+Each family must implement all eight baseline macro concepts or document a clearly superior role-specific replacement. Expanding a rack to twelve or sixteen macros is encouraged when the extra controls expose genuinely independent performance dimensions. The family name is a role, not a fixed recipe. DRUIID and HAZY variants must use their own style profile and should not be produced by relabeling identical mappings.
 
 ## Style behavior
 
@@ -88,6 +102,7 @@ Native approval requires a real Live fixture or controlled manual test that conf
 - stock and third-party dependencies resolve exactly as declared
 - devices, chains, and mappings survive save/reopen
 - every macro moves the intended parameters across the declared range
+- every advertised macro is mapped, useful, documented, and free of dangerous discontinuities
 - Macro Variations recall correctly
 - dry/wet, bypass, automation, mono, stereo, low-end, clipping, tail, and latency behavior is acceptable
 - the rack produces a genuinely useful result on its declared source types
