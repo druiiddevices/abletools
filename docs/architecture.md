@@ -22,6 +22,31 @@ R1 is intentionally narrow:
 
 This foundation proves that Abletools can make real assets rather than persuasive filenames.
 
+## R2 DRUIID MIDI Essentials
+
+R2 adds one profile-routed vertical slice while keeping native formats closed:
+
+- an explicit runtime capability registry that fails closed for unknown or gated exporters
+- canonical DRUIID recipe inputs with independent upper-voice, bass, motif, and rhythm controls
+- degree-first chord, bass, motif, and General MIDI drum generation in related A/B/C forms
+- strict MIDI checks for event ordering, note lifetimes, clip length, ranges, and drum declarations
+- full manifest field, checksum, inventory, dependency, and validation-record coverage
+- deterministic ZIP metadata and ordering, safe-path checks, exact inventory checks, and extracted validation
+
+Generation writes a binary first, validates the written bytes, records that result, then re-runs the
+validator against the completed directory pack and ZIP. The ZIP contains a single directory named for
+the manifest pack and uses fixed metadata so output is byte-reproducible across staging directories.
+
+The `DRUIID` profile remains provisional. R2 implements only its confirmed behavior: seed recall,
+scale awareness, degree-first harmony, bounded mutation, practical ranges, and transparent controls.
+It does not invent a Druiid timbral identity. `HAZY` routes to a separate gated capability.
+
+## Runtime capability registry
+
+Every generator or exporter enters through `abletools.capabilities`. Standard MIDI, PCM WAV,
+deterministic ZIP packs, and DRUIID MIDI Essentials are enabled. HAZY MIDI Essentials and native
+Serum 2, Ableton rack, Ableton groove, and Max for Live serialization remain explicitly gated.
+
 ## Asset catalog
 
 Released packs belong under:

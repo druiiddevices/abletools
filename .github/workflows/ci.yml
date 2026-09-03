@@ -24,3 +24,9 @@ jobs:
         run: |
           abletools demo --output build/smoke --seed 1842
           abletools validate build/smoke
+          abletools validate build/smoke.zip
+      - name: Build and validate DRUIID MIDI Essentials
+        run: |
+          abletools druiid-midi --output build/druiid-midi --seed 1842 --root A --scale minor
+          abletools validate build/druiid-midi
+          abletools validate build/druiid-midi.zip
