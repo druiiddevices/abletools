@@ -35,3 +35,11 @@ jobs:
           abletools hazy-midi --output build/hazy-midi --seed 1842 --root D --mode dorian
           abletools validate build/hazy-midi
           abletools validate build/hazy-midi.zip
+      - name: Build and validate Ableton rack blueprints
+        run: |
+          abletools rack-blueprints --output build/racks-druiid --style DRUIID --seed 1842
+          abletools validate build/racks-druiid
+          abletools validate build/racks-druiid.zip
+          abletools rack-blueprints --output build/racks-hazy --style HAZY --seed 1842
+          abletools validate build/racks-hazy
+          abletools validate build/racks-hazy.zip
