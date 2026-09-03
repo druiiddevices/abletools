@@ -12,7 +12,7 @@ from typing import Any
 from . import __version__
 from .audio import validate_wav, write_kick_wav
 from .capabilities import require_capability
-from .druiid import GeneratedMidiAsset, generate_midi_essentials
+from .druiid import GM_DRUM_MAPPING, GeneratedMidiAsset, generate_midi_essentials
 from .manifest import load_manifest, validate_manifest_data, validate_relative_path, write_manifest
 from .midi import PPQ, validate_midi, write_chord_midi, write_midi_clip
 from .recipe import MidiEssentialsRecipe
@@ -46,21 +46,101 @@ def _asset_filename(recipe: MidiEssentialsRecipe, asset: GeneratedMidiAsset) -> 
     )
 
 
-def _validate_midi_entry(path: Path, item: dict[str, Any]) -> dict[str, int | float]:
+def _validate_midi_entry(path: Path, item: dict[str, Any]) -> dict[str, Any]:
     metadata = item["metadata"]
+    for field in ("bars", "tempo_bpm"):
+        if field not in metadata:
+            raise ValueError(f"MIDI file metadata requires {field}: {item['path']}")
+    format_metadata = item["format"]
+    if format_metadata.get("container") != "Standard MIDI File":
+        raise ValueError("MIDI file format metadata must declare Standard MIDI File")
+    expected_midi_format = format_metadata.get("midi_format")
+    expected_ppq = format_metadata.get("ppq")
+    if expected_midi_format is None or expected_ppq is None:
+        raise ValueError("MIDI file format metadata requires midi_format and ppq")
     note_range_data = metadata.get("note_range")
+    if note_range_data is not None and (
+        not isinstance(note_range_data, list) or len(note_range_data) != 2
+    ):
+        raise ValueError(f"MIDI note_range metadata must contain two values: {item['path']}")
     note_range = tuple(note_range_data) if note_range_data is not None else None
     drum_mapping = metadata.get("drum_mapping")
+    if drum_mapping is not None and not isinstance(drum_mapping, dict):
+        raise ValueError(f"MIDI drum_mapping metadata must be an object: {item['path']}")
     channel = metadata.get("channel")
+    if channel is not None and (
+        isinstance(channel, bool) or not isinstance(channel, int) or not 1 <= channel <= 16
+    ):
+        raise ValueError(f"MIDI channel metadata must be from 1 to 16: {item['path']}")
     expected_channel = channel - 1 if channel is not None else None
     return validate_midi(
         path,
+        expected_midi_format=expected_midi_format,
+        expected_ppq=expected_ppq,
         expected_bars=metadata["bars"],
         expected_bpm=metadata["tempo_bpm"],
         note_range=note_range,
         drum_mapping=drum_mapping,
         expected_channel=expected_channel,
     )
+
+
+def _validate_midi_metadata_consistency(
+    manifest: dict[str, Any], item: dict[str, Any], result: dict[str, Any]
+) -> None:
+    """Require declarations at every layer to describe the parsed MIDI bytes."""
+    metadata = item["metadata"]
+    for field in ("seed", "tempo_bpm", "bars", "meter", "key", "root", "scale", "profile_version"):
+        if field not in manifest:
+            continue
+        if field not in metadata:
+            raise ValueError(f"MIDI metadata missing top-level field: {field}")
+        if metadata[field] != manifest[field]:
+            raise ValueError(f"MIDI metadata mismatch for {field}: {item['path']}")
+
+    format_metadata = item["format"]
+    if manifest.get("style") == "DRUIID" and manifest.get("asset_type") == "midi_essentials":
+        if format_metadata.get("midi_format") != 0 or format_metadata.get("ppq") != PPQ:
+            raise ValueError("DRUIID MIDI Essentials requires MIDI format 0 at 480 PPQ")
+        if manifest["format"].get("midi_format") != 0 or manifest["format"].get("ppq") != PPQ:
+            raise ValueError("DRUIID MIDI Essentials top-level format must be format 0 at 480 PPQ")
+    if result["format"] != format_metadata["midi_format"]:
+        raise ValueError(f"MIDI format metadata disagrees with parsed result: {item['path']}")
+    if result["ppq"] != format_metadata["ppq"]:
+        raise ValueError(f"MIDI PPQ metadata disagrees with parsed result: {item['path']}")
+
+    if item["role"] == "chords":
+        degree_sequence = metadata.get("degree_sequence")
+        chord_symbols = metadata.get("chord_symbols")
+        if (
+            not isinstance(degree_sequence, list)
+            or not degree_sequence
+            or any(
+                isinstance(degree, bool) or not isinstance(degree, int) or not 1 <= degree <= 7
+                for degree in degree_sequence
+            )
+        ):
+            raise ValueError(f"chord metadata requires a valid degree sequence: {item['path']}")
+        if (
+            not isinstance(chord_symbols, list)
+            or not chord_symbols
+            or any(not isinstance(symbol, str) or not symbol.strip() for symbol in chord_symbols)
+        ):
+            raise ValueError(f"chord metadata requires non-empty chord symbols: {item['path']}")
+        if len(degree_sequence) != len(chord_symbols):
+            raise ValueError(f"chord degree sequence and symbols must have matching lengths: {item['path']}")
+
+    if item["role"] == "drum_pattern":
+        drum_mapping = metadata.get("drum_mapping")
+        channel = metadata.get("channel")
+        if drum_mapping != GM_DRUM_MAPPING:
+            raise ValueError(f"drum mapping must match the declared General MIDI mapping: {item['path']}")
+        if channel != 10:
+            raise ValueError(f"drum channel must be MIDI channel 10: {item['path']}")
+        if result["used_channels"] != [channel]:
+            raise ValueError(f"drum channel metadata disagrees with parsed MIDI: {item['path']}")
+        if not set(result["used_notes"]) <= set(drum_mapping.values()):
+            raise ValueError(f"drum mapping metadata disagrees with parsed MIDI: {item['path']}")
 
 
 def _readme_for_midi_pack(pack_name: str, recipe: MidiEssentialsRecipe) -> str:
@@ -196,7 +276,13 @@ def build_demo_pack(output: str | Path, seed: int) -> Path:
         "sample_width_bits": 24,
         "seed": seed,
     }
-    midi_result = validate_midi(midi_path, expected_bars=8, expected_bpm=120)
+    midi_result = validate_midi(
+        midi_path,
+        expected_midi_format=0,
+        expected_ppq=PPQ,
+        expected_bars=8,
+        expected_bpm=120,
+    )
     wav_result = validate_wav(wav_path)
     files = [
         {
@@ -276,6 +362,7 @@ def validate_pack(root: str | Path) -> dict[str, Any]:
         if suffix in {".mid", ".midi"}:
             validator = "abletools.midi"
             result = _validate_midi_entry(path, item)
+            _validate_midi_metadata_consistency(manifest, item, result)
         elif suffix == ".wav":
             validator = "abletools.audio"
             result = validate_wav(path)

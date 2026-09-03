@@ -173,12 +173,14 @@ def _read_vlq(data: bytes, offset: int) -> tuple[int, int]:
 def validate_midi(
     path: str | Path,
     *,
+    expected_midi_format: int | None = None,
+    expected_ppq: int | None = None,
     expected_bars: int | None = None,
     expected_bpm: int | float | None = None,
     note_range: tuple[int, int] | None = None,
     drum_mapping: Mapping[str, int] | None = None,
     expected_channel: int | None = None,
-) -> dict[str, int | float]:
+) -> dict[str, int | float | list[int]]:
     """Strictly validate Abletools' supported Standard MIDI subset."""
     require_capability("standard_midi")
     data = Path(path).read_bytes()
@@ -194,6 +196,27 @@ def validate_midi(
         raise ValueError("MIDI format 0 must contain exactly one track")
     if division == 0 or division & 0x8000:
         raise ValueError("MIDI must use a positive PPQ time division")
+    if expected_midi_format is not None:
+        if (
+            isinstance(expected_midi_format, bool)
+            or not isinstance(expected_midi_format, int)
+            or expected_midi_format not in (0, 1)
+        ):
+            raise ValueError("expected MIDI format must be 0 or 1")
+        if midi_format != expected_midi_format:
+            raise ValueError(
+                f"MIDI format mismatch: expected {expected_midi_format}, found {midi_format}"
+            )
+    if expected_ppq is not None:
+        if (
+            isinstance(expected_ppq, bool)
+            or not isinstance(expected_ppq, int)
+            or expected_ppq <= 0
+            or expected_ppq & 0x8000
+        ):
+            raise ValueError("expected MIDI PPQ must be a positive PPQ time division")
+        if division != expected_ppq:
+            raise ValueError(f"MIDI PPQ mismatch: expected {expected_ppq}, found {division}")
 
     if note_range is not None:
         if len(note_range) != 2 or not 0 <= note_range[0] <= note_range[1] <= 127:
@@ -217,8 +240,8 @@ def validate_midi(
     note_ons = 0
     note_offs = 0
     parsed_tracks = 0
-    tempo_values: list[int] = []
-    time_signatures: list[tuple[int, int]] = []
+    tempo_events: list[tuple[int, int]] = []
+    time_signature_events: list[tuple[int, tuple[int, int]]] = []
     end_ticks: list[int] = []
     used_notes: set[int] = set()
     used_channels: set[int] = set()
@@ -261,11 +284,11 @@ def validate_midi(
                 if meta_type == 0x51:
                     if meta_length != 3:
                         raise ValueError("invalid MIDI tempo event")
-                    tempo_values.append(int.from_bytes(payload, "big"))
+                    tempo_events.append((absolute_tick, int.from_bytes(payload, "big")))
                 elif meta_type == 0x58:
                     if meta_length != 4:
                         raise ValueError("invalid MIDI time-signature event")
-                    time_signatures.append((payload[0], 1 << payload[1]))
+                    time_signature_events.append((absolute_tick, (payload[0], 1 << payload[1])))
                 elif meta_type == 0x2F:
                     if meta_length != 0:
                         raise ValueError("invalid MIDI end-of-track event")
@@ -320,9 +343,19 @@ def validate_midi(
         raise ValueError("MIDI note counts are invalid")
     if offset != len(data):
         raise ValueError("unexpected data after MIDI tracks")
-    if not tempo_values or any(tempo <= 0 for tempo in tempo_values):
+    if len(tempo_events) != 1:
+        raise ValueError("MIDI clip requires exactly one tempo event")
+    tempo_tick, tempo_value = tempo_events[0]
+    if tempo_tick != 0:
+        raise ValueError("MIDI tempo event must occur at tick 0")
+    if tempo_value <= 0:
         raise ValueError("MIDI clip requires a valid tempo event")
-    if not time_signatures or any(signature != (4, 4) for signature in time_signatures):
+    if len(time_signature_events) != 1:
+        raise ValueError("MIDI clip requires exactly one time-signature event")
+    time_signature_tick, time_signature = time_signature_events[0]
+    if time_signature_tick != 0:
+        raise ValueError("MIDI time-signature event must occur at tick 0")
+    if time_signature != (4, 4):
         raise ValueError("MIDI clip requires a 4/4 time-signature event")
     clip_ticks = max(end_ticks)
     ticks_per_bar = division * BEATS_PER_BAR
@@ -331,7 +364,7 @@ def validate_midi(
     bars = clip_ticks // ticks_per_bar
     if expected_bars is not None and bars != expected_bars:
         raise ValueError(f"MIDI clip length mismatch: expected {expected_bars} bars, found {bars}")
-    tempo_bpm = 60_000_000 / tempo_values[0]
+    tempo_bpm = 60_000_000 / tempo_value
     if expected_bpm is not None and abs(tempo_bpm - float(expected_bpm)) > 0.001:
         raise ValueError(f"MIDI tempo mismatch: expected {expected_bpm}, found {tempo_bpm:.6f}")
     if note_range is not None and (min(used_notes) < note_range[0] or max(used_notes) > note_range[1]):
@@ -352,4 +385,6 @@ def validate_midi(
         "ppq": division,
         "tempo_bpm": round(tempo_bpm, 6),
         "tracks": parsed_tracks,
+        "used_channels": sorted(channel + 1 for channel in used_channels),
+        "used_notes": sorted(used_notes),
     }
