@@ -27,8 +27,8 @@ The planned order is now:
 1. shared contract hardening plus DRUIID MIDI Essentials
 2. separate HAZY MIDI Essentials
 3. rack-blueprint contract and sound-design tool catalog
-4. native rack fixture/export work when an Ableton validation path is available
-5. drums and general samples/loops, followed by the remaining independently gated formats
+4. drums and general samples/loops
+5. native rack fixture/export work when an Ableton validation path is available, followed by the remaining independently gated formats
 
 ## Implement milestone 1 now
 
