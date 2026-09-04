@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 
 from .audio import validate_wav
+from .drum_pack import build_drum_essentials_pack
+from .drum_recipe import DrumEssentialsRecipe
 from .manifest import load_manifest
 from .midi import validate_midi
 from .pack import build_demo_pack, build_druiid_midi_pack, build_hazy_midi_pack, validate_pack, validate_zip
@@ -78,6 +80,17 @@ def build_parser() -> argparse.ArgumentParser:
     racks.add_argument("--output", type=Path, required=True)
     racks.add_argument("--style", choices=("DRUIID", "HAZY"), required=True)
     racks.add_argument("--seed", type=int, default=1842)
+    drums = subparsers.add_parser(
+        "drum-essentials", help="build deterministic DRUIID or HAZY Drum One-Shot Essentials"
+    )
+    drums.add_argument("--output", type=Path, required=True)
+    drums.add_argument("--style", choices=("DRUIID", "HAZY"), required=True)
+    drums.add_argument("--seed", type=int, default=1842)
+    drums.add_argument("--kick-character", type=float, default=0.5)
+    drums.add_argument("--snare-character", type=float, default=0.5)
+    drums.add_argument("--hat-character", type=float, default=0.5)
+    drums.add_argument("--shaker-character", type=float, default=0.5)
+    drums.add_argument("--percussion-character", type=float, default=0.5)
     validate = subparsers.add_parser("validate", help="validate an R1 file or pack")
     validate.add_argument("path", type=Path)
     return parser
@@ -133,6 +146,21 @@ def main() -> int:
     if args.command == "rack-blueprints":
         output = build_rack_blueprint_pack(
             args.output, RackBlueprintRecipe(seed=args.seed, style=args.style)
+        )
+        print(json.dumps({"status": "ok", "pack": str(output), "archive": str(output.with_suffix('.zip'))}))
+        return 0
+    if args.command == "drum-essentials":
+        output = build_drum_essentials_pack(
+            args.output,
+            DrumEssentialsRecipe(
+                seed=args.seed,
+                style=args.style,
+                kick_character=args.kick_character,
+                snare_character=args.snare_character,
+                hat_character=args.hat_character,
+                shaker_character=args.shaker_character,
+                percussion_character=args.percussion_character,
+            ),
         )
         print(json.dumps({"status": "ok", "pack": str(output), "archive": str(output.with_suffix('.zip'))}))
         return 0
