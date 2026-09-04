@@ -43,3 +43,11 @@ jobs:
           abletools rack-blueprints --output build/racks-hazy --style HAZY --seed 1842
           abletools validate build/racks-hazy
           abletools validate build/racks-hazy.zip
+      - name: Build and validate Drum One-Shot Essentials
+        run: |
+          abletools drum-essentials --output build/drums-druiid --style DRUIID --seed 1842
+          abletools validate build/drums-druiid
+          abletools validate build/drums-druiid.zip
+          abletools drum-essentials --output build/drums-hazy --style HAZY --seed 1842
+          abletools validate build/drums-hazy
+          abletools validate build/drums-hazy.zip

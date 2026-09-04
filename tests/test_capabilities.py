@@ -10,6 +10,8 @@ class CapabilityTests(unittest.TestCase):
         self.assertTrue(require_capability("zip_pack").enabled)
         self.assertTrue(require_capability("druiid_midi_essentials").enabled)
         self.assertTrue(require_capability("hazy_midi_essentials").enabled)
+        self.assertTrue(require_capability("druiid_drum_one_shot_essentials").enabled)
+        self.assertTrue(require_capability("hazy_drum_one_shot_essentials").enabled)
         self.assertTrue(require_capability("ableton_rack_blueprint").enabled)
 
     def test_native_exporters_remain_gated(self) -> None:

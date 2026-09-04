@@ -13,6 +13,7 @@ from . import __version__
 from .audio import validate_wav, write_kick_wav
 from .capabilities import require_capability
 from .druiid import GM_DRUM_MAPPING, GeneratedMidiAsset, generate_midi_essentials
+from .drum_validation import DRUM_ASSET_TYPE, validate_drum_entry, validate_drum_pack_declarations
 from .hazy import GeneratedHazyMidiAsset, generate_hazy_midi_essentials
 from .manifest import load_manifest, validate_manifest_data, validate_relative_path, write_manifest
 from .midi import PPQ, validate_midi, write_chord_midi, write_midi_clip
@@ -664,6 +665,7 @@ def validate_pack(root: str | Path) -> dict[str, Any]:
         raise ValueError("pack requires a non-empty README.md")
     manifest = load_manifest(pack_root / "manifest.json", check_files=True)
     _validate_hazy_inventory(manifest)
+    validate_drum_pack_declarations(manifest, pack_root)
     if manifest.get("asset_type") == "ableton_rack_blueprints":
         if len(manifest["files"]) != len(RACK_FAMILIES):
             raise ValueError("rack blueprint pack requires exactly five files")
@@ -694,10 +696,14 @@ def validate_pack(root: str | Path) -> dict[str, Any]:
             result = _validate_midi_entry(path, item)
             _validate_midi_metadata_consistency(manifest, item, result)
         elif suffix == ".wav":
-            validator = "abletools.audio"
-            result = validate_wav(path)
-            if result["sample_rate"] != 48_000 or result["sample_width_bits"] != 24:
-                raise ValueError("R1 pack WAV files must be 48 kHz, 24-bit PCM")
+            if manifest.get("asset_type") == DRUM_ASSET_TYPE:
+                validator = "abletools.drum_audio"
+                result = validate_drum_entry(pack_root, manifest, item)
+            else:
+                validator = "abletools.audio"
+                result = validate_wav(path)
+                if result["sample_rate"] != 48_000 or result["sample_width_bits"] != 24:
+                    raise ValueError("R1 pack WAV files must be 48 kHz, 24-bit PCM")
         elif suffix == ".json" and manifest.get("asset_type") == "ableton_rack_blueprints":
             validator = "abletools.rack_blueprint"
             if item["format"] != {
@@ -773,6 +779,10 @@ def validate_zip(path: str | Path) -> dict[str, Any]:
         names = [info.filename for info in infos]
         if not names or len(names) != len({name.casefold() for name in names}):
             raise ValueError("ZIP must contain a unique, non-empty file inventory")
+        if names != sorted(names):
+            raise ValueError("ZIP entries must use deterministic lexical ordering")
+        if bundle.comment:
+            raise ValueError("ZIP archives cannot contain volatile comments")
         for info in infos:
             validate_relative_path(info.filename)
             if info.is_dir():
@@ -782,6 +792,15 @@ def validate_zip(path: str | Path) -> dict[str, Any]:
                 raise ValueError("ZIP symbolic links are not allowed")
             if info.flag_bits & 0x1:
                 raise ValueError("encrypted ZIP members are not allowed")
+            if (
+                info.date_time != ZIP_TIMESTAMP
+                or info.compress_type != zipfile.ZIP_STORED
+                or info.create_system != 3
+                or info.external_attr != 0o100644 << 16
+                or info.extra
+                or info.comment
+            ):
+                raise ValueError("ZIP member metadata is not deterministic")
         top_levels = {PurePosixPath(name).parts[0] for name in names}
         if len(top_levels) != 1:
             raise ValueError("ZIP must contain exactly one top-level pack directory")

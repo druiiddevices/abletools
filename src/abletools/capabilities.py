@@ -45,6 +45,16 @@ CAPABILITIES: dict[str, Capability] = {
         "enabled",
         "Generate the standards-compliant HAZY MIDI Essentials pack.",
     ),
+    "druiid_drum_one_shot_essentials": Capability(
+        "druiid_drum_one_shot_essentials",
+        "enabled",
+        "Synthesize and validate the original DRUIID Drum One-Shot Essentials pack.",
+    ),
+    "hazy_drum_one_shot_essentials": Capability(
+        "hazy_drum_one_shot_essentials",
+        "enabled",
+        "Synthesize and validate the original HAZY Drum One-Shot Essentials pack.",
+    ),
     "ableton_rack_blueprint": Capability(
         "ableton_rack_blueprint",
         "enabled",

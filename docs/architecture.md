@@ -61,6 +61,23 @@ Every generator or exporter enters through `abletools.capabilities`. Standard MI
 deterministic ZIP packs, DRUIID MIDI Essentials, HAZY MIDI Essentials, and JSON rack blueprints are enabled. Native Serum 2,
 Ableton rack, Ableton groove, and Max for Live serialization remain explicitly gated.
 
+## Milestone 4A drum one-shot essentials
+
+Milestone 4A adds real, original PCM audio generation without opening any native-format gate:
+
+- explicit pack, voice, family-bound, and style-profile recipe models
+- isolated deterministic RNG namespaces for every style, family, and variant
+- independent DRUIID and HAZY synthesis behavior for kicks, snares, hats, shakers, and percussion
+- exact 40-source catalogs per style plus one preview assembled only from included one-shots
+- canonical mono 48 kHz / 24-bit RIFF/WAVE output with headroom, DC, silence, boundary-fade,
+  duration, normalized-waveform shape, metadata, checksum, inventory, and corruption validation
+- preview reconstruction from declared source hashes and placements
+
+DRUIID uses the user-approved Milestone 4A transient and low-end intent while the broader profile
+remains provisional. HAZY uses broad softened, filtered, asymmetric, and worn characteristics without
+copying identifiable material. The two profiles have separate algorithms and seed namespaces.
+Subjective listening approval, publication, and native Ableton/Serum serialization are outside this milestone.
+
 ## Milestone 3A rack blueprint foundation
 
 Rack blueprints are deterministic JSON construction specifications, not native Ableton files. The layer consists of:

@@ -12,7 +12,9 @@ Abletools is the deterministic asset engine and catalog behind the **Abletools G
 | Standard MIDI files | Generated and strictly validated |
 | DRUIID MIDI Essentials | Enabled: chord, bass, motif, and drum A/B/C clips |
 | HAZY MIDI Essentials | Enabled: chord, bass, motif, arpeggio, and GM drum A/B/C clips |
-| 48 kHz / 24-bit PCM WAV | Generated and validated |
+| DRUIID Drum One-Shot Essentials | Enabled: 40 synthesized source WAVs plus source-only preview |
+| HAZY Drum One-Shot Essentials | Enabled: 40 synthesized source WAVs plus source-only preview |
+| 48 kHz / 24-bit PCM WAV | Generated with strict signal and container validation |
 | ZIP packs + manifests | Deterministically generated and validated |
 | Ableton rack blueprint JSON | Enabled: deterministic, strictly validated build specifications |
 | Serum 2 presets | Gated pending licensed fixture/export harness |
@@ -40,6 +42,12 @@ abletools validate build/racks-druiid.zip
 abletools rack-blueprints --output build/racks-hazy --style HAZY --seed 1842
 abletools validate build/racks-hazy
 abletools validate build/racks-hazy.zip
+abletools drum-essentials --output build/drums-druiid --style DRUIID --seed 1842
+abletools validate build/drums-druiid
+abletools validate build/drums-druiid.zip
+abletools drum-essentials --output build/drums-hazy --style HAZY --seed 1842
+abletools validate build/drums-hazy
+abletools validate build/drums-hazy.zip
 python -m unittest discover -s tests
 ```
 
@@ -53,6 +61,10 @@ Every pack includes a README, complete metadata and validation records, and a de
 The rack commands each create five JSON build specifications under `RACKS/BLUEPRINTS`: two Audio
 Effect Racks, two Operator Instrument Racks, and one MIDI Effect Rack. These are validated construction
 documents, not native Ableton rack files. Native export remains gated.
+Each Drum Essentials command synthesizes 8 kicks, 8 snares, 6 closed hats, 4 open hats,
+6 shakers, and 8 percussion one-shots. Every source is mono 48 kHz / 24-bit PCM and has
+family-bounded duration, conservative headroom, DC, silence, fade, waveform-shape, checksum,
+and metadata validation. The additional preview is reconstructible from declared included sources.
 
 ## Repository map
 
@@ -73,6 +85,10 @@ The current phase includes separate standards-compliant DRUIID and HAZY MIDI Ess
 manifest and MIDI checks, an explicit runtime capability registry, and safe deterministic ZIP validation.
 Milestone 3A adds a closed Live 12 stock-device/parameter registry and deterministic DRUIID/HAZY rack
 blueprint packs with strict topology, macro, variation, safety, manifest, checksum, and ZIP checks.
+Milestone 4A adds independent DRUIID and HAZY original drum-synthesis profiles, isolated family/voice
+random streams, exact 40-source catalogs, strict canonical WAV inspection, gain-normalized shape
+deduplication, reconstructible previews, and deterministic ZIP validation.
 DRUIID remains a provisional musical-behavior profile rather than a claimed sonic genre. HAZY is an
 original profile built from broad modal, textural, repetition, and timing principles; it is not an artist
 recreation system. Publication and all native Serum 2, Ableton, and Max for Live formats remain gated.
+Generated smoke assets remain under `build/`; no listening or release approval is implied.

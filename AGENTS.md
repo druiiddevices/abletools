@@ -43,6 +43,12 @@ python -m abletools.cli rack-blueprints --output build/racks-druiid --style DRUI
 python -m abletools.cli validate build/racks-druiid
 python -m abletools.cli rack-blueprints --output build/racks-hazy --style HAZY --seed 1842
 python -m abletools.cli validate build/racks-hazy
+python -m abletools.cli drum-essentials --output build/drums-druiid --style DRUIID --seed 1842
+python -m abletools.cli validate build/drums-druiid
+python -m abletools.cli validate build/drums-druiid.zip
+python -m abletools.cli drum-essentials --output build/drums-hazy --style HAZY --seed 1842
+python -m abletools.cli validate build/drums-hazy
+python -m abletools.cli validate build/drums-hazy.zip
 ```
 
 ## Change discipline
